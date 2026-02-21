@@ -1,0 +1,8 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
+  </Configurations>
+  <Project Path="XafAIReportDesigner/XafAIReportDesigner.Module/XafAIReportDesigner.Module.csproj" />
+  <Project Path="XafAIReportDesigner/XafAIReportDesigner.ReportDesigner/XafAIReportDesigner.ReportDesigner.csproj" />
+</Solution>

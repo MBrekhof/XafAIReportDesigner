@@ -4,85 +4,69 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Git Rules
 
-- **Never push to `upstream` (egarim/XafGitHubCopilot).** Only push to `origin` (MBrekhof/XafGitHubCopilot), which is the fork.
+- Only push to `origin` (MBrekhof/XafAIReportDesigner).
 - Always create feature branches off `master` — do not commit directly to `master`.
 
 ## Project Overview
 
-DevExpress XAF application integrating the GitHub Copilot SDK to provide an in-app AI assistant that queries live business data, creates records conversationally, and works on both Blazor Server and WinForms. Uses a Northwind-style domain (orders, customers, products, employees, invoices) seeded automatically on first run.
+Standalone WinForms AI-powered report designer built on DevExpress XtraReports and AI Integration. Uses the DevExpress `ReportPromptToReportBehavior` to generate reports from natural language prompts. Entity metadata is discovered via reflection from a shared Module assembly containing Northwind-style business objects.
 
 ## Build & Run Commands
 
 ```bash
-# Restore and build the entire solution
-dotnet build XafGitHubCopilot/XafGitHubCopilot.slnx
+# Build the entire solution
+dotnet build XafAIReportDesigner.slnx
 
-# Run the Blazor Server app (primary development target)
-dotnet run --project XafGitHubCopilot/XafGitHubCopilot.Blazor.Server
-
-# Run the WinForms app (Windows only)
-dotnet run --project XafGitHubCopilot/XafGitHubCopilot.Win
+# Run the Report Designer app (Windows only)
+dotnet run --project XafAIReportDesigner/XafAIReportDesigner.ReportDesigner
 
 # Build a specific project
-dotnet build XafGitHubCopilot/XafGitHubCopilot.Module/XafGitHubCopilot.Module.csproj
+dotnet build XafAIReportDesigner/XafAIReportDesigner.Module/XafAIReportDesigner.Module.csproj
 ```
 
-There is no formal test suite configured. The `ConsoleTest` project is a minimal console app for ad-hoc testing.
+There is no formal test suite.
 
 ## Architecture
 
-### Solution Structure (3-tier XAF pattern)
+### Solution Structure (2 projects)
 
-- **`XafGitHubCopilot.Module/`** — Platform-agnostic core: business objects (EF Core entities), XAF controllers, and all Copilot SDK integration services. Both UI projects reference this.
-- **`XafGitHubCopilot.Blazor.Server/`** — Blazor Server UI. Entry point: `Program.cs` → `Startup.cs`. Uses DevExpress `DxAIChat` Blazor component for the chat UI (`Editors/CopilotChatViewItem/CopilotChat.razor`).
-- **`XafGitHubCopilot.Win/`** — WinForms UI (net10.0-windows). Uses DevExpress `AIChatControl` for the chat UI.
+- **`XafAIReportDesigner.Module/`** — Shared library: EF Core entity definitions (Northwind domain), custom attributes (`[AIVisible]`, `[AIDescription]`), and `ReflectionSchemaDiscoveryService` for runtime entity discovery.
+- **`XafAIReportDesigner.ReportDesigner/`** — WinForms app (net10.0-windows). Entry point: `Program.cs`. Main form: `AIReportDesignerForm` extends `XRDesignRibbonForm` with AI behavior attached via `BehaviorManager.Attach<ReportPromptToReportBehavior>()`.
 
-### GitHub Copilot SDK Integration (Module/Services/)
+### Key Components
 
-The integration chain flows:
-
-1. **`ServiceCollectionExtensions.AddCopilotSdk()`** — Registers all services. Called from both Blazor `Startup.cs` and WinForms `Startup.cs`.
-2. **`CopilotChatService`** — Singleton managing the `CopilotClient` lifecycle. Handles session creation, streaming via SDK events (`AssistantMessageDeltaEvent`, `SessionIdleEvent`), and a 2-minute timeout. Lazy-starts on first request.
-3. **`CopilotChatClient`** — `IChatClient` adapter bridging DevExpress AI chat controls to the Copilot SDK. This is what DxAIChat/AIChatControl resolves via DI.
-4. **`CopilotToolsProvider`** — Creates `AIFunction` tools for function calling. Tools use `ScopedObjectSpace` (DI scope + `INonSecuredObjectSpaceFactory`) for database access. Six tools: `query_orders`, `invoice_aging`, `low_stock_products`, `employee_order_stats`, `employee_territories`, `create_order`.
-5. **`CopilotChatDefaults`** — Shared UI config (system prompt, prompt suggestions, Markdown→HTML rendering via Markdig + HtmlSanitizer).
-6. **`CopilotOptions`** — Bound from `appsettings.json` section `"Copilot"`. Keys: `Model` (default "gpt-4o"), `GithubToken`, `CliPath`, `UseLoggedInUser` (default true), `Streaming` (default true).
-
-### Key Patterns
-
-- **Non-Persistent Business Objects**: `CopilotChat` is a `DomainComponent` (not stored in DB) — it exists only to host the chat ViewItem in XAF's navigation.
-- **ScopedObjectSpace pattern**: Tool methods in `CopilotToolsProvider` create a DI scope + non-secured ObjectSpace per call, disposed after use. This is required because tools run outside the normal XAF request lifecycle.
-- **Model switching at runtime**: `SelectCopilotModelController` lets users switch AI models (gpt-4o, gpt-5, claude-sonnet-4, etc.) via a `SingleChoiceAction` that sets `CopilotChatService.CurrentModel`.
-- **XAF Model Differences**: `Model.DesignedDiffs.xafml` (embedded in Module) and `Model.xafml` (copied to output in UI projects) configure XAF views, navigation, and layout.
+- **`ReflectionSchemaDiscoveryService`** — Scans the Module assembly for `[AIVisible]` entities and builds a schema prompt for the AI, including table/column names and relationships.
+- **`AIReportDesignerForm`** — Extends the DevExpress Report Designer with AI prompt-to-report, plus Database ribbon buttons for Load/Save reports to PostgreSQL.
+- **`ReportDbContext`** (inner class in AIReportDesignerForm) — Lightweight DbContext mapping only `ReportDataV2` for report storage.
 
 ### Database
 
-- EF Core 8.0.18 with SQLite (`XafGitHubCopilot.db`) for development
-- DbContext: `XafGitHubCopilotEFCoreDbContext`
-- Auto-migration via XAF's `ModuleUpdater` pattern (`DatabaseUpdate/Updater.cs`)
-- 14 entities: Order, OrderItem, Customer, Product, Category, Supplier, Employee, EmployeeTerritory, Territory, Region, Shipper, Invoice, ApplicationUser, ApplicationUserLoginInfo
-- Seed data: 20 customers, 5 employees, 30 products, 50 orders, 20 invoices, test users "User"/"Admin" (empty passwords in debug)
+- PostgreSQL for report storage and data queries
+- 13 Northwind-style entities: Order, OrderItem, Customer, Product, Category, Supplier, Employee, EmployeeTerritory, Territory, Region, Shipper, Invoice, Enums
+- Connection configured via `appsettings.json` or `appsettings.Development.json`
 
 ## Tech Stack
 
 - .NET 10.0 (net10.0 / net10.0-windows)
-- DevExpress XAF 25.2.*, DevExpress AI Integration 25.2.*
-- GitHub Copilot SDK 0.1.23, Microsoft.Extensions.AI
-- EF Core 8.0.18 + SQLite
-- Markdig + HtmlSanitizer for Markdown rendering
+- DevExpress XtraReports + AI Integration 25.2.3
+- DevExpress Persistent Base/BaseImpl.EFCore 25.2.3
+- EF Core 8.0.18 + PostgreSQL (Npgsql)
+- OpenAI SDK + Microsoft.Extensions.AI
 
 ## Configuration
 
-Add a `"Copilot"` section to `appsettings.json` to override defaults:
+Create `appsettings.Development.json` in the ReportDesigner project:
 ```json
 {
-  "Copilot": {
-    "Model": "gpt-4o",
-    "GithubToken": null,
-    "UseLoggedInUser": true,
-    "Streaming": true
+  "OpenAI": {
+    "ApiKey": "sk-...",
+    "Model": "gpt-4o"
+  },
+  "Database": {
+    "ConnectionString": "Host=localhost;Port=5432;Database=xafaireportdesigner;Username=xaf;Password=xaf123",
+    "XpoConnectionString": "XpoProvider=Postgres;Server=localhost;Port=5432;User ID=xaf;Password=xaf123;Database=xafaireportdesigner;Encoding=UNICODE"
   }
 }
 ```
 
-Authentication requires either a GitHub PAT (`GithubToken`) or an active GitHub CLI login (`UseLoggedInUser: true`).
+The OpenAI API key is required. The app shows an error dialog if not configured.
