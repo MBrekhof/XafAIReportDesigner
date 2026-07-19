@@ -10,9 +10,11 @@ Follow-ups from RPT-004 (see DONE.md for the full recipe):
 
 - a) ~~Page-break placement hint.~~ Added to the binding rules (keep header/table/totals
   together, break after totals); latest runs render cleanly one invoice per page.
-- b) The in-app "Database → AI → Generate from Prompt" button and the WinForms clarification
-  dialog need a user click-through (the console host variant is verified end to end, including
-  the validation warning path).
+- b) User-verified 2026-07-19: loading the generated RPT004-Invoice from the DB and modifying
+  it with the AI Assistant chat "worked like a charm" — the full loop (headless generate →
+  save → load with credential restore → chat edit) holds. **Still pending one click:** the
+  in-app "Database → AI → Generate from Prompt" button itself (clarification/status dialogs;
+  the console host variant is verified end to end including the validation warning path).
 - c) ~~Regenerate RPT004-Invoice after the Discount `[AIDescription]` fix.~~ Verified 2026-07-19:
   all line totals correct (Chang 5×£19 at 5% = £90.25, was −€380), subtotals/VAT add up,
   "No items" caption on empty invoices. Saved to ReportDataV2 as "RPT004-Invoice".
