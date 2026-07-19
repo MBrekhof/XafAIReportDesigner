@@ -14,8 +14,13 @@ Follow-ups from RPT-004 (see DONE.md for the full recipe):
   post-process PageBreak settings.
 - b) The in-app "Database → AI → Generate from Prompt" button and the WinForms clarification
   dialog need a user click-through (the console host variant is verified end to end).
-- c) Regenerate RPT004-Invoice after the Discount `[AIDescription]` fix (seed stores percent
-  0–100; the first generation assumed a 0–1 fraction → some negative line totals).
+- c) ~~Regenerate RPT004-Invoice after the Discount `[AIDescription]` fix.~~ Verified 2026-07-19:
+  all line totals correct (Chang 5×£19 at 5% = £90.25, was −€380), subtotals/VAT add up,
+  "No items" caption on empty invoices. Saved to ReportDataV2 as "RPT004-Invoice".
+- d) Run-to-run layout variance (CTP): the regenerated report has empty invoice-header fields
+  (", Invoice: Date: Due:") that the previous generation filled correctly. Consider adding a
+  header-binding example to the binding-rules text (scalar fields of the current master row:
+  plain [InvoiceNumber], [InvoiceDate]) or a validation pass that flags unbound labels.
 
 ## P3: Low
 
