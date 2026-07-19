@@ -156,6 +156,39 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             // The API generates layout + bindings only — attach the matching data source.
             SchemaSqlDataSourceFactory.Attach(report,
                 _schemaService.Schema, AppConnectionName, BuildConnectionParameters(_connectionString));
+
+            // Generation quality varies run to run (CTP): resolve every binding against the
+            // schema graph; on failures, roll a fresh generation and keep the better result.
+            // (A repair request updating the existing report regenerates broadly AND mutates
+            // the passed instance — measured strictly worse than a fresh roll.)
+            var issues = SchemaSqlDataSourceFactory.ValidateBindings(report, _schemaService.Schema);
+            if (issues.Count > 0)
+            {
+                statusLabel.Text = $"{issues.Count} binding issue(s) — trying a fresh generation…";
+                var retry = await AIExtensionsContainerDesktop.Default.GeneratePromptToReportAsync(
+                    new PromptToReportRequest(prompt, schemaText)
+                    {
+                        ReportGenerationHost = new WinFormsAIReportGenerationHost(this, s => statusLabel.Text = s),
+                        FixLayoutErrors = true,
+                    });
+                SchemaSqlDataSourceFactory.Attach(retry,
+                    _schemaService.Schema, AppConnectionName, BuildConnectionParameters(_connectionString));
+                var retryIssues = SchemaSqlDataSourceFactory.ValidateBindings(retry, _schemaService.Schema);
+                if (retryIssues.Count < issues.Count)
+                {
+                    report = retry;
+                    issues = retryIssues;
+                }
+            }
+
+            if (issues.Count > 0)
+            {
+                MessageBox.Show(
+                    "The generated report has unresolved bindings you may want to fix in the designer:\n\n- " +
+                    string.Join("\n- ", issues.Take(12)) +
+                    (issues.Count > 12 ? $"\n… and {issues.Count - 12} more" : ""),
+                    "AI Report Generation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
             OpenReport(report);
         }
         catch (Exception ex)

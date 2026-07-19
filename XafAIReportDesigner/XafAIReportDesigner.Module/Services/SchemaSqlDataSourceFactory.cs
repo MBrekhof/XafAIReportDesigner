@@ -61,6 +61,10 @@ namespace XafAIReportDesigner.Module.Services
             sb.AppendLine("- Set the report's DataMember to the master view name (e.g. \"Invoices\"); the root Detail band repeats once per master row.");
             sb.AppendLine("- A DetailReportBand's DataMember must be an ABSOLUTE relation path that starts at the report's master view and uses RELATION NAMES, e.g. \"Invoices.InvoicesOrders\" and nested \"Invoices.InvoicesOrders.OrdersOrderItems\".");
             sb.AppendLine("- In expressions, reach related rows through relation names: [OrdersCustomers].[CompanyName] returns the order's customer name; Sum([OrdersOrderItems].[Quantity]) aggregates over an order's items.");
+            sb.AppendLine("- Scalar fields of the current row bind directly: a label in a band bound to \"Invoices\" uses plain [InvoiceNumber] or Concat('Date: ', FormatString('{0:d}', [InvoiceDate])). Never leave a label's expression empty ([]).");
+            sb.AppendLine("- Expressions are relative to the band's own row context: in a band whose DataMember ends at Orders, aggregate with Sum([OrdersOrderItems].[Quantity]) — NOT with the full path from the master view ([InvoicesOrders].[...] does not exist on an Orders row).");
+            sb.AppendLine("- Use ONLY the columns listed above — do not invent fields (no [Description], no [VatRate]). Constants such as a VAT rate are numeric literals in the expression.");
+            sb.AppendLine("- Keep each master row's header, detail table, and totals together so they print on the same page; insert the page break after the master row's totals (e.g. GroupFooter/DetailReportBand PageBreak = AfterBand).");
             sb.AppendLine();
             sb.AppendLine("Relations available (RelationName: meaning):");
             foreach (var fk in ForeignKeys(schema).Where(f => f.OwnerTable != f.TargetTable))
@@ -104,6 +108,141 @@ namespace XafAIReportDesigner.Module.Services
                     saved.Add((band, member));
                     Collect(band.Bands, member, saved);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Validates every expression binding and DetailReportBand path in a generated
+        /// report against the schema + relation graph. Returns human-readable issues —
+        /// exactly the failures generation varies on (unresolvable field paths, empty []
+        /// operands, wrong relation names). Feed non-empty results back through a repair
+        /// request (the API accepts an existing report to update).
+        /// </summary>
+        public static IReadOnlyList<string> ValidateBindings(XtraReport report, SchemaInfo schema)
+        {
+            var issues = new List<string>();
+            var relations = BuildRelationMap(schema);
+            var columns = BuildColumnMap(schema);
+
+            ValidateBands(report.Bands, ResolveContext(report.DataMember, relations, columns, issues, "report"));
+            return issues;
+
+            void ValidateBands(BandCollection bands, string contextEntity)
+            {
+                foreach (Band band in bands)
+                {
+                    var bandContext = contextEntity;
+                    if (band is DetailReportBand detailReport)
+                        bandContext = ResolveContext(detailReport.DataMember, relations, columns, issues, $"band '{band.Name}'");
+
+                    foreach (var binding in band.ExpressionBindings.Cast<ExpressionBinding>())
+                        ValidateExpression(binding.Expression, band.Name, band.Name, bandContext);
+                    ValidateControls(band, band, bandContext);
+                    if (band is DetailReportBand nested)
+                        ValidateBands(nested.Bands, bandContext);
+                }
+            }
+
+            void ValidateControls(XRControl control, Band band, string contextEntity)
+            {
+                foreach (XRControl child in control.Controls)
+                {
+                    foreach (var binding in child.ExpressionBindings.Cast<ExpressionBinding>())
+                        ValidateExpression(binding.Expression, child.Name, band.Name, contextEntity);
+                    ValidateControls(child, band, contextEntity);
+                }
+            }
+
+            void ValidateExpression(string expression, string controlName, string bandName, string contextEntity)
+            {
+                if (string.IsNullOrWhiteSpace(expression) || contextEntity == null) return;
+                if (expression.Contains("[]"))
+                {
+                    issues.Add($"Control '{controlName}' (band '{bandName}'): expression contains an empty operand [] — bind it to a real field.");
+                    return;
+                }
+
+                foreach (var chain in ExtractFieldChains(expression))
+                {
+                    var entity = contextEntity;
+                    for (int i = 0; i < chain.Count; i++)
+                    {
+                        var segment = chain[i];
+                        var isLast = i == chain.Count - 1;
+                        if (relations.TryGetValue((entity, segment), out var next))
+                        {
+                            entity = next;
+                            continue;
+                        }
+                        if (isLast && columns[entity].Contains(segment))
+                            break;
+                        issues.Add($"Control '{controlName}' (band '{bandName}'): [{string.Join("].[", chain)}] does not resolve — '{segment}' is not a column or relation of \"{entity}\".");
+                        break;
+                    }
+                }
+            }
+        }
+
+        private static string ResolveContext(string dataMember, Dictionary<(string, string), string> relations,
+            Dictionary<string, HashSet<string>> columns, List<string> issues, string owner)
+        {
+            if (string.IsNullOrEmpty(dataMember)) return null;
+            var segments = dataMember.Split('.');
+            if (!columns.ContainsKey(segments[0]))
+            {
+                issues.Add($"{owner}: DataMember '{dataMember}' does not start with a known view.");
+                return null;
+            }
+            var entity = segments[0];
+            foreach (var segment in segments.Skip(1))
+            {
+                if (!relations.TryGetValue((entity, segment), out entity))
+                {
+                    issues.Add($"{owner}: DataMember '{dataMember}' — '{segment}' is not a relation of the preceding view.");
+                    return null;
+                }
+            }
+            return entity;
+        }
+
+        private static Dictionary<(string Master, string RelationName), string> BuildRelationMap(SchemaInfo schema)
+        {
+            var map = new Dictionary<(string, string), string>();
+            foreach (var fk in ForeignKeys(schema).Where(f => f.OwnerTable != f.TargetTable))
+            {
+                map[(fk.TargetTable, fk.TargetTable + fk.OwnerTable)] = fk.OwnerTable;
+                map[(fk.OwnerTable, fk.OwnerTable + fk.TargetTable)] = fk.TargetTable;
+            }
+            return map;
+        }
+
+        private static Dictionary<string, HashSet<string>> BuildColumnMap(SchemaInfo schema)
+        {
+            var map = new Dictionary<string, HashSet<string>>();
+            foreach (var entity in schema.Entities)
+            {
+                var cols = new HashSet<string>(StringComparer.Ordinal) { "ID" };
+                foreach (var prop in entity.Properties) cols.Add(prop.ColumnName);
+                foreach (var fk in ForeignKeys(schema).Where(f => f.OwnerTable == entity.TableName)) cols.Add(fk.FkColumn);
+                map[entity.TableName] = cols;
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// Extracts bracketed field chains ("[OrdersCustomers].[CompanyName]" → two segments)
+        /// from a criteria expression. Report parameters (?name) are not bracketed and are ignored.
+        /// </summary>
+        private static IEnumerable<List<string>> ExtractFieldChains(string expression)
+        {
+            var matches = System.Text.RegularExpressions.Regex.Matches(expression,
+                @"\[([A-Za-z_][A-Za-z0-9_]*)\](?:\s*\.\s*\[([A-Za-z_][A-Za-z0-9_]*)\])*");
+            foreach (System.Text.RegularExpressions.Match m in matches)
+            {
+                var chain = new List<string> { m.Groups[1].Value };
+                foreach (System.Text.RegularExpressions.Capture c in m.Groups[2].Captures)
+                    chain.Add(c.Value);
+                yield return chain;
             }
         }
 
