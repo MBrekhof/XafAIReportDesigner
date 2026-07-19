@@ -1,5 +1,23 @@
 # Done
 
+#### RPT-005: Blazor/Web Report Designer variant with the OWN pipeline (ID: 1060)
+
+Completed 2026-07-19 (branch `rpt-005-web-designer`). New `XafAIReportDesigner.Web` project:
+Blazor Web App (Interactive Server, net10.0) hosting the mature (non-CTP) `DxReportDesigner`
+with the own pipeline server-side. Home page = Generate (prompt + model + name) and Modify
+(report picker + change) → `AIReportService` drives the shared `SpecPipeline.RollBestAsync`
+(moved to the Module so WinForms + Web share one roll loop; Module gained
+Microsoft.Extensions.AI.Abstractions) → saves to `ReportDataV2` → navigates to
+`/designer?report=name`. `ReportDataV2Storage : ReportStorageWebExtension` = same DB storage
+as WinForms, so both hosts see the same reports. Verified with C# Playwright E2E: home,
+designer surface, browser Generate (~5s to open in designer), PREVIEW with live data
+(20 pages, correct totals), browser Modify ("move quantity first" → verified in preview).
+Web gotchas solved: `builder.WebHost.UseStaticWebAssets()` (Production runs 404
+`_framework`/`_content` without it) and `IConnectionProviderFactory`/`IConnectionProviderService`
+in DI — the web stack does NOT consult `DefaultConnectionStringProvider` for name-only
+connections (preview NullReferenceException in `SqlDataSource.EndFillList` until registered).
+Not yet done: DX toolbar/wizard customization, auth, Linux/Skia fonts (Windows hosting only).
+
 #### RPT-009: Remove DevExpress AI CTP integration — own pipeline is the only AI path
 
 Completed 2026-07-19, at the user's direction on merging to master. Removed

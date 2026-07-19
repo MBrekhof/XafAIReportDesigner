@@ -34,10 +34,16 @@ There is no formal test suite.
 
 ## Architecture
 
-### Solution Structure (2 projects)
+### Solution Structure (3 projects)
 
 - **`XafAIReportDesigner.Module/`** — Shared library: EF Core entity definitions (Northwind domain), custom attributes (`[AIVisible]`, `[AIDescription]`), and `ReflectionSchemaDiscoveryService` for runtime entity discovery.
-- **`XafAIReportDesigner.ReportDesigner/`** — WinForms app (net10.0-windows). Entry point: `Program.cs`. Main form: `AIReportDesignerForm` extends `XRDesignRibbonForm` with AI behavior attached via `BehaviorManager.Attach<ReportPromptToReportBehavior>()`.
+- **`XafAIReportDesigner.ReportDesigner/`** — WinForms app (net10.0-windows). Entry point: `Program.cs`. Main form: `AIReportDesignerForm` extends `XRDesignRibbonForm`.
+- **`XafAIReportDesigner.Web/`** — Blazor Server app (net10.0) hosting `DxReportDesigner` +
+  the own pipeline (`AIReportService` → shared `SpecPipeline`). `ReportDataV2Storage`
+  (ReportStorageWebExtension) shares the WinForms DB storage. Web gotchas (verified):
+  `UseStaticWebAssets()` required outside Development; name-only connections resolve ONLY via
+  `IConnectionProviderFactory`/`IConnectionProviderService` in DI (DefaultConnectionStringProvider
+  is not consulted by the web preview). Run: `dotnet run --project XafAIReportDesigner/XafAIReportDesigner.Web` → http://localhost:5210 with AI behavior attached via `BehaviorManager.Attach<ReportPromptToReportBehavior>()`.
 
 ### Key Components
 

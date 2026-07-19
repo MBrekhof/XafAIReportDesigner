@@ -1,11 +1,20 @@
 # XafAIReportDesigner
 
-Standalone WinForms AI-powered report designer built on DevExpress XtraReports 26.1. Reports are
-generated and modified from natural-language prompts against a Northwind-style PostgreSQL data
-model through an **own provider-agnostic AI pipeline** (any model via LLMTornado; ~4s per
+AI-powered report designer on DevExpress XtraReports 26.1, in two hosts — a **WinForms
+desktop designer** and a **Blazor web designer** — sharing one engine. Reports are generated
+and modified from natural-language prompts against a Northwind-style PostgreSQL data model
+through an **own provider-agnostic AI pipeline** (any model via LLMTornado; ~4s per
 generation, ~2s per modification) that handles master-detail correctly. The DevExpress AI CTP
-integration was evaluated first and abandoned (slow, gpt-5.2-only, unreliable chat — full story
-in DOCS/DONE.md).
+integration was evaluated first and abandoned (slow, gpt-5.2-only, unreliable chat — full
+story in DOCS/DONE.md).
+
+## Projects
+
+| Project | What it is |
+| --- | --- |
+| `XafAIReportDesigner.Module` | Shared engine: entity discovery, schema text, `SqlDataSource` factory + binding validation, `ReportSpecTranslator`, `SpecPipeline` (the LLM roll loop) |
+| `XafAIReportDesigner.ReportDesigner` | WinForms designer (`XRDesignRibbonForm`) — Generate/Modify in the Database ribbon |
+| `XafAIReportDesigner.Web` | Blazor Server host — `DxReportDesigner` in the browser, Generate/Modify on the home page |
 
 ## Features
 
@@ -29,7 +38,11 @@ in DOCS/DONE.md).
   reliable by construction, ~2-3s. Replaces the DX CTP Modify chat for these reports.
 - **Report persistence** — Load/Save to the XAF `ReportDataV2` table in PostgreSQL; saved layouts
   store the connection *name only* and credentials are restored on load.
-- Full DevExpress Report Designer ribbon UI.
+- Full DevExpress Report Designer ribbon UI (WinForms).
+- **Web designer** — the same pipeline + the browser Report Designer (`DxReportDesigner`):
+  generate/modify from the home page, then edit and preview in the browser. Shares the
+  `ReportDataV2` storage with the WinForms app, so both hosts see the same reports. Name-only
+  connections resolve via `IConnectionProviderFactory` (no credentials in layouts here either).
 
 ## Prerequisites
 
@@ -60,10 +73,17 @@ in DOCS/DONE.md).
      }
    }
    ```
+   The web host reads the same file shape from
+   `XafAIReportDesigner/XafAIReportDesigner.Web/appsettings.Development.json`.
 3. Build and run:
    ```bash
    dotnet build XafAIReportDesigner.slnx
+
+   # WinForms designer
    dotnet run --project XafAIReportDesigner/XafAIReportDesigner.ReportDesigner
+
+   # Web designer -> http://localhost:5210
+   dotnet run --project XafAIReportDesigner/XafAIReportDesigner.Web
    ```
 
 ## Known limitations
@@ -73,11 +93,14 @@ in DOCS/DONE.md).
   spec yet; extend `ReportSpec` + `ReportSpecTranslator` as needs appear.
 - Keep prompts free of data semantics that contradict the schema (e.g. discount formulas) —
   newer models refuse on contradictions, older ones silently pick a side.
+- Web host: bare-bones home page UI (refinement tracked as RPT-010), no authentication,
+  Windows hosting only for now (report rendering uses System.Drawing fonts; Linux containers
+  need the DevExpress Skia swap).
 
 ## Tech Stack
 
-- .NET 10.0 (`net10.0` / `net10.0-windows`)
-- DevExpress XtraReports 26.1.3
+- .NET 10.0 (`net10.0` / `net10.0-windows`; Web host: Blazor Interactive Server)
+- DevExpress XtraReports 26.1.3 (+ `DevExpress.Blazor.Reporting.JSBasedControls` on the web)
 - EF Core 8.0.18 + PostgreSQL (Npgsql 8)
 - LLMTornado + Microsoft.Extensions.AI — the pipeline talks to any provider through
   `IChatClient`

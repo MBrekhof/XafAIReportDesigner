@@ -1,0 +1,28 @@
+@page "/designer"
+@rendermode InteractiveServer
+@inject ReportDataV2Store Store
+
+@if (string.IsNullOrEmpty(Report))
+{
+    <div class="content">
+        <h1>Report Designer</h1>
+        <p>Pick a report:</p>
+        <ul>
+            @foreach (var name in Store.ListNames())
+            {
+                <li><a href="/designer?report=@Uri.EscapeDataString(name)">@name</a></li>
+            }
+        </ul>
+    </div>
+}
+else
+{
+    <DxReportDesigner ReportName="@Report" Height="calc(100vh - 46px)" Width="100%" AllowMDI="false">
+    </DxReportDesigner>
+}
+
+@code {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "report")]
+    public string? Report { get; set; }
+}

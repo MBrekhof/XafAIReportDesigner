@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <title>XafAIReportDesigner Web</title>
+    @DxResourceManager.RegisterScripts()
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; }
+        .topbar { background: #2c3e50; color: white; padding: 10px 20px; }
+        .topbar a { color: #9fd3ff; margin-right: 16px; text-decoration: none; }
+        .content { padding: 16px 20px; }
+        textarea, select, input[type=text] { font: inherit; padding: 6px; }
+        button { font: inherit; padding: 6px 16px; cursor: pointer; }
+        .status { margin-top: 8px; color: #555; }
+        .issues { color: #b45309; }
+        .error { color: #b91c1c; }
+    </style>
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>
