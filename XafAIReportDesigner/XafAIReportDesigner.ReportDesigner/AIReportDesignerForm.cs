@@ -58,6 +58,8 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             {
                 behavior.Properties.RetryAttemptCount = 3;
                 behavior.Properties.FixLayoutErrors = true;
+                // GPT-5-series models reject temperature values other than 1 (DX docs warning).
+                behavior.Properties.Temperature = 1f;
 
                 // Build schema-aware predefined prompts so the AI knows the actual database structure.
                 behavior.Properties.PredefinedPrompts = BuildPredefinedPrompts();
@@ -68,6 +70,7 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             {
                 behavior.Properties.FixLayoutErrors = true;
                 behavior.Properties.RetryAttemptCount = 3;
+                behavior.Properties.Temperature = 1f;
             });
 
             System.Diagnostics.Debug.WriteLine("[AIReportDesignerForm] ReportPromptToReportBehavior attached via Attach<T>");
