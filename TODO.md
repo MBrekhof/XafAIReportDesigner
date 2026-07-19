@@ -2,20 +2,6 @@
 
 ## P1: High
 
-#### RPT-003: Add AI "Modify Report" chat behavior (ID: 1058)
-
-The AI Assistant chat panel that edits an existing layout in natural language (add bands/tables,
-restyle, group/sort/filter). WinForms-only, CTP.
-
-Implemented on branch `rpt-003-modify-report-chat`: `ReportModifyBehavior` attached alongside
-`ReportPromptToReportBehavior` in `AIReportDesignerForm.OnLoad`; project SDK switched to
-`Microsoft.NET.Sdk.Razor` (required — the chat panel is a Blazor WebView). Build clean; smoke-run
-verified the AI Assistant panel renders (chat input + sample-prompt hint), Design Analyzer 0 errors.
-**Remaining (manual):** open a report, send a modification request (e.g. "Add a report header
-band."), confirm the layout changes.
-
-Docs: https://docs.devexpress.com/XtraReports/405498 (Modify Report Behavior, WinForms, CTP).
-
 ## P2: Medium
 
 #### RPT-004: Wire ReflectionSchemaDiscoveryService into the 26.1 cross-platform API (ID: 1059)
@@ -24,6 +10,11 @@ Docs: https://docs.devexpress.com/XtraReports/405498 (Modify Report Behavior, Wi
 `AIReportingIntegration.GeneratePromptToReportAsync()` — schema is a first-class parameter,
 supports updating an existing report, runs headless. Our `[AIVisible]`/`[AIDescription]` curation
 is still the value-add: it decides *what* the AI sees.
+
+Evidence from RPT-003 testing (2026-07-19) strengthens the case: the wizard's multi-query data
+sources carry no relations, so master-detail layouts (invoice + items) bind wrong — the generated
+FableOne iterated all 150 OrderItems under one repeated invoice. Feeding FK relationships through
+`DataSourceSchema` is the only lever that could fix that class of report.
 
 - a) Check the actual type of `PromptToReportRequest.DataSourceSchema` and map
   `ReflectionSchemaDiscoveryService` output onto it (replace `GenerateSystemPrompt()` text-blob
