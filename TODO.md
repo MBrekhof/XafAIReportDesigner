@@ -6,6 +6,16 @@
 
 #### RPT-006: Polish the headless generation path (ID: 1061)
 
+Generation speed, benchmarked 2026-07-19 (invoice prompt, full multi-agent flow per roll):
+**gpt-5.2 is the only model that reliably completes the DevExpress CTP workflow** —
+2.5–4.5 min/roll, doubled when validation triggers the fresh retry. gpt-5.4-mini is ~50s but
+produced an empty report once and a workflow-rejected layout once; gpt-5.6-luna refuses with
+validation exceptions; gpt-5.6-terra gets HTTP 400 from the API (request-shape incompatibility).
+Slowness is inherent for now; status window shows elapsed time + roll number. Recheck faster
+models when DX ships 26.2 / de-CTPs the workflow. Also learned: prompt–schema contradictions
+(prompt said `1 - discount`, schema says percent) make 5.6 models refuse outright and made
+earlier models mis-compute — keep prompts semantics-free and let the schema carry meaning.
+
 Follow-ups from RPT-004 (see DONE.md for the full recipe):
 
 - a) ~~Page-break placement hint.~~ Added to the binding rules (keep header/table/totals

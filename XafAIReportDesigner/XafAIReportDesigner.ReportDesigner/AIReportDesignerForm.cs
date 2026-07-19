@@ -142,13 +142,20 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         statusForm.Controls.Add(statusLabel);
         statusForm.Show(this);
 
+        // Generation takes minutes (multi-agent flow, several LLM calls per roll) —
+        // show elapsed time and the roll number so slow never looks frozen.
+        var started = DateTime.Now;
+        var rollPrefix = "";
+        void SetStatus(string s) =>
+            statusLabel.Text = $"[{DateTime.Now - started:mm\\:ss}] {rollPrefix}{s}";
+
         try
         {
             var schemaText = _schemaService.GenerateDataSourceSchema() + "\n" +
                 SchemaSqlDataSourceFactory.DescribeDataMembers(_schemaService.Schema);
             var request = new PromptToReportRequest(prompt, schemaText)
             {
-                ReportGenerationHost = new WinFormsAIReportGenerationHost(this, s => statusLabel.Text = s),
+                ReportGenerationHost = new WinFormsAIReportGenerationHost(this, SetStatus),
                 FixLayoutErrors = true,
             };
             var report = await AIExtensionsContainerDesktop.Default.GeneratePromptToReportAsync(request);
@@ -164,11 +171,12 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             var issues = SchemaSqlDataSourceFactory.ValidateBindings(report, _schemaService.Schema);
             if (issues.Count > 0)
             {
-                statusLabel.Text = $"{issues.Count} binding issue(s) — trying a fresh generation…";
+                rollPrefix = "Roll 2 (first had binding issues): ";
+                SetStatus("starting…");
                 var retry = await AIExtensionsContainerDesktop.Default.GeneratePromptToReportAsync(
                     new PromptToReportRequest(prompt, schemaText)
                     {
-                        ReportGenerationHost = new WinFormsAIReportGenerationHost(this, s => statusLabel.Text = s),
+                        ReportGenerationHost = new WinFormsAIReportGenerationHost(this, SetStatus),
                         FixLayoutErrors = true,
                     });
                 SchemaSqlDataSourceFactory.Attach(retry,
