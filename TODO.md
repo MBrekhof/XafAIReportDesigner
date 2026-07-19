@@ -20,3 +20,15 @@ and preserved in project memory.
   (`ReflectionSchemaDiscoveryService`, `SchemaSqlDataSourceFactory` incl. `ValidateBindings`)
   is UI-free and reusable as-is.
 
+## P3: Low
+
+#### RPT-010: Web UI refinement (ID: 1063)
+
+The web variant works (user-confirmed 2026-07-19) but the home page is bare-bones: plain
+HTML controls, no progress animation during generation (~5s of button-disabled silence), no
+report thumbnails/cards, top bar is minimal. Refine when the web variant becomes a daily
+tool — candidates: DevExpress Blazor components (DxButton/DxComboBox/DxLoadingPanel) for a
+consistent look with the designer, generation status streaming (SpecPipeline already emits
+per-attempt status), report list with delete, and a proper landing layout. Deliberately
+deferred by the user ("works, ui needs some refinement, not now").
+
