@@ -2,7 +2,7 @@
 
 **Status: ACTIVE (2026-07-19).** The own provider-agnostic AI pipeline is merged to master
 (Generate + Modify via AI, any model, ~4s; DX AI CTP fully removed — RPT-007..009 in DONE.md).
-The Blazor/Web variant (RPT-005) is built on branch `rpt-005-web-designer`, awaiting merge.
+The Blazor/Web variant (RPT-005) is merged; UI refinement deferred (RPT-010).
 The parking note below is historical (abandoned DX-CTP path).
 
 **Old status: PARKED (2026-07-19).** The exploration succeeded — the full pipeline works and is
