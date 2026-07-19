@@ -50,17 +50,31 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             // The wizard's connection list only reads the app config file, so the
             // connection registered via DefaultConnectionStringProvider (preview/runtime
             // resolution) never shows up there — expose it through this wizard-side service.
+            // The same service restores credentials on load: layouts store the connection
+            // name only (saving strips passwords, which broke reloads from ReportDataV2).
+            var connectionService = new AppConnectionStorageService(_connectionString);
             mdiController.RemoveService(typeof(IConnectionStorageService));
-            mdiController.AddService(typeof(IConnectionStorageService),
-                new AppConnectionStorageService(_connectionString));
+            mdiController.AddService(typeof(IConnectionStorageService), connectionService);
+            mdiController.RemoveService(typeof(IConnectionProviderService));
+            mdiController.AddService(typeof(IConnectionProviderService), connectionService);
 
             _behaviorManager.Attach<ReportPromptToReportBehavior>(mdiController, behavior =>
             {
                 behavior.Properties.RetryAttemptCount = 3;
                 behavior.Properties.FixLayoutErrors = true;
+                // GPT-5-series models reject temperature values other than 1 (DX docs warning).
+                behavior.Properties.Temperature = 1f;
 
                 // Build schema-aware predefined prompts so the AI knows the actual database structure.
                 behavior.Properties.PredefinedPrompts = BuildPredefinedPrompts();
+            });
+
+            // AI Assistant chat panel: edit the open report layout in natural language (CTP).
+            _behaviorManager.Attach<ReportModifyBehavior>(mdiController, behavior =>
+            {
+                behavior.Properties.FixLayoutErrors = true;
+                behavior.Properties.RetryAttemptCount = 3;
+                behavior.Properties.Temperature = 1f;
             });
 
             System.Diagnostics.Debug.WriteLine("[AIReportDesignerForm] ReportPromptToReportBehavior attached via Attach<T>");
@@ -295,7 +309,7 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     /// "existing connections" list. Name matches the DefaultConnectionStringProvider
     /// registration in Program.cs so saved reports resolve at preview time.
     /// </summary>
-    private sealed class AppConnectionStorageService : IConnectionStorageService
+    private sealed class AppConnectionStorageService : IConnectionStorageService, IConnectionProviderService
     {
         private readonly SqlDataConnection _connection;
 
@@ -304,13 +318,21 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             var b = new NpgsqlConnectionStringBuilder(npgsqlConnectionString);
             _connection = new SqlDataConnection(
                 "XafAIReportDesigner",
-                new PostgreSqlConnectionParameters(b.Host, b.Port, b.Database, b.Username, b.Password));
+                new PostgreSqlConnectionParameters(b.Host, b.Port, b.Database, b.Username, b.Password))
+            {
+                // Serialize only the name into report layouts; LoadConnection restores
+                // the full parameters (saved layouts never carry credentials).
+                StoreConnectionNameOnly = true,
+            };
         }
 
         public bool CanSaveConnection => false;
         public bool Contains(string connectionName) => connectionName == _connection.Name;
         public IEnumerable<SqlDataConnection> GetConnections() { yield return _connection; }
         public void SaveConnection(string connectionName, IDataConnection dataConnection, bool saveCredentials) { }
+
+        public SqlDataConnection? LoadConnection(string connectionName)
+            => connectionName == _connection.Name ? _connection : null;
     }
 
     private DbContext CreateDbContext()

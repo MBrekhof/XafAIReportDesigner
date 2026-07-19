@@ -1,5 +1,23 @@
 # Done
 
+#### RPT-003: Add AI "Modify Report" chat behavior (ID: 1058)
+
+Completed 2026-07-19, branch `rpt-003-modify-report-chat`.
+
+`ReportModifyBehavior` attached alongside the prompt-to-report behavior; project SDK switched to
+`Microsoft.NET.Sdk.Razor` (chat panel is a Blazor WebView). Along the way: default model bumped
+gpt-4o → gpt-5.2 with `Temperature = 1` on both behaviors (GPT-5 series rejects other values),
+and saved-report reloads fixed via `IConnectionProviderService` + `StoreConnectionNameOnly`
+(saving strips credentials from serialized connections).
+
+**User-verified working:** chat executes precise layout commands (bands, styling); wizard
+generates data-bound reports (FableOne/FableTwo).
+**Known CTP limits (upstream, not ours):** generation quality varies run to run (occasional
+fieldless layouts); chat handles layout operations only — data-source requests fail with
+"modification failed", and questions crash the JSON parser ("'X' is an invalid start of a
+value"); master-detail (invoice) layouts bind wrong because the wizard's multi-query data
+sources carry no relations. The relationship-aware fix is RPT-004's headless path.
+
 #### RPT-001: Upgrade DevExpress 25.2.3 → 26.1 (ID: 1056)
 
 Completed 2026-07-19, branch `rpt-001-devexpress-26.1`.
