@@ -65,6 +65,7 @@ static class Program
                 ["XafAIReportDesigner"] = xpoConnectionString
             });
 
-        Application.Run(new AIReportDesignerForm(connectionString, schemaService));
+        Application.Run(new AIReportDesignerForm(connectionString, schemaService, apiKey,
+            configuration["OpenAI:GenerateModel"] ?? "gpt-5.4-mini"));
     }
 }

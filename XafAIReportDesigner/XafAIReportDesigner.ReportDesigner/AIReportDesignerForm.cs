@@ -1,9 +1,7 @@
 using System.ComponentModel;
 using System.IO;
 using System.Text;
-using DevExpress.AIIntegration;
 using DevExpress.AIIntegration.Reporting;
-using DevExpress.AIIntegration.Reporting.Common.Extensions;
 using DevExpress.AIIntegration.WinForms.Reporting;
 using DevExpress.DataAccess.ConnectionParameters;
 using DevExpress.DataAccess.Sql;
@@ -14,7 +12,11 @@ using DevExpress.XtraBars;
 using DevExpress.XtraBars.Ribbon;
 using DevExpress.XtraReports.UI;
 using DevExpress.XtraReports.UserDesigner;
+using LlmTornado;
+using LlmTornado.Code;
+using LlmTornado.Microsoft.Extensions.AI;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Npgsql;
 using XafAIReportDesigner.Module.Services;
 
@@ -33,11 +35,17 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     private readonly BehaviorManager _behaviorManager;
     private readonly string _connectionString;
     private readonly ReflectionSchemaDiscoveryService _schemaService;
+    private readonly string _apiKey;
+    private readonly string _defaultGenerateModel;
+    private BarEditItem? _modelItem;
 
-    public AIReportDesignerForm(string connectionString, ReflectionSchemaDiscoveryService schemaService)
+    public AIReportDesignerForm(string connectionString, ReflectionSchemaDiscoveryService schemaService,
+        string apiKey, string defaultGenerateModel)
     {
         _connectionString = connectionString;
         _schemaService = schemaService;
+        _apiKey = apiKey;
+        _defaultGenerateModel = defaultGenerateModel;
         _components = new Container();
         _behaviorManager = new BehaviorManager(_components);
 
@@ -113,12 +121,25 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         group.ItemLinks.Add(saveItem);
         page.Groups.Add(group);
 
-        // Headless generation via the 26.1 cross-platform API — unlike the wizard,
-        // this path feeds the AI our curated schema including FK relationships.
+        // Own AI pipeline (provider-agnostic via LLMTornado): the model fills a report-spec
+        // JSON, the deterministic ReportSpecTranslator builds the layout. Any model works —
+        // unlike the DX CTP behaviors above, which require gpt-5.2 and minutes per roll.
         var aiGroup = new RibbonPageGroup("AI");
         var generateItem = new BarButtonItem(ribbon.Manager, "Generate from Prompt");
         generateItem.ItemClick += OnGenerateFromPrompt;
         aiGroup.ItemLinks.Add(generateItem);
+
+        var modelCombo = new DevExpress.XtraEditors.Repository.RepositoryItemComboBox();
+        modelCombo.Items.AddRange(new[] { "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.2" });
+        ribbon.Manager.RepositoryItems.Add(modelCombo);
+        _modelItem = new BarEditItem(ribbon.Manager)
+        {
+            Caption = "Model",
+            Edit = modelCombo,
+            EditValue = _defaultGenerateModel,
+            EditWidth = 120,
+        };
+        aiGroup.ItemLinks.Add(_modelItem);
         page.Groups.Add(aiGroup);
 
         ribbon.Pages.Add(page);
@@ -129,6 +150,8 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         var prompt = PromptForText("Generate Report from Prompt",
             "Describe the report (the AI receives the full schema incl. relationships):");
         if (string.IsNullOrWhiteSpace(prompt)) return;
+
+        var model = _modelItem?.EditValue as string is { Length: > 0 } m ? m : _defaultGenerateModel;
 
         using var statusForm = new Form
         {
@@ -142,62 +165,64 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         statusForm.Controls.Add(statusLabel);
         statusForm.Show(this);
 
-        // Generation takes minutes (multi-agent flow, several LLM calls per roll) —
-        // show elapsed time and the roll number so slow never looks frozen.
         var started = DateTime.Now;
-        var rollPrefix = "";
-        void SetStatus(string s) =>
-            statusLabel.Text = $"[{DateTime.Now - started:mm\\:ss}] {rollPrefix}{s}";
+        void SetStatus(string s) => statusLabel.Text = $"[{DateTime.Now - started:mm\\:ss}] {s}";
 
         try
         {
+            // Own pipeline: LLM fills a report-spec JSON, ReportSpecTranslator builds the
+            // layout deterministically. A roll costs seconds, so on parse failures or
+            // binding issues we simply roll again and keep the best result.
             var schemaText = _schemaService.GenerateDataSourceSchema() + "\n" +
                 SchemaSqlDataSourceFactory.DescribeDataMembers(_schemaService.Schema);
-            var request = new PromptToReportRequest(prompt, schemaText)
-            {
-                ReportGenerationHost = new WinFormsAIReportGenerationHost(this, SetStatus),
-                FixLayoutErrors = true,
-            };
-            var report = await AIExtensionsContainerDesktop.Default.GeneratePromptToReportAsync(request);
+            var systemPrompt = ReportSpecTranslator.BuildSystemPrompt(schemaText);
 
-            // The API generates layout + bindings only — attach the matching data source.
-            SchemaSqlDataSourceFactory.Attach(report,
-                _schemaService.Schema, AppConnectionName, BuildConnectionParameters(_connectionString));
-
-            // Generation quality varies run to run (CTP): resolve every binding against the
-            // schema graph; on failures, roll a fresh generation and keep the better result.
-            // (A repair request updating the existing report regenerates broadly AND mutates
-            // the passed instance — measured strictly worse than a fresh roll.)
-            var issues = SchemaSqlDataSourceFactory.ValidateBindings(report, _schemaService.Schema);
-            if (issues.Count > 0)
+            var api = new TornadoApi(new List<ProviderAuthentication>
             {
-                rollPrefix = "Roll 2 (first had binding issues): ";
-                SetStatus("starting…");
-                var retry = await AIExtensionsContainerDesktop.Default.GeneratePromptToReportAsync(
-                    new PromptToReportRequest(prompt, schemaText)
-                    {
-                        ReportGenerationHost = new WinFormsAIReportGenerationHost(this, SetStatus),
-                        FixLayoutErrors = true,
-                    });
-                SchemaSqlDataSourceFactory.Attach(retry,
-                    _schemaService.Schema, AppConnectionName, BuildConnectionParameters(_connectionString));
-                var retryIssues = SchemaSqlDataSourceFactory.ValidateBindings(retry, _schemaService.Schema);
-                if (retryIssues.Count < issues.Count)
+                new ProviderAuthentication(LLmProviders.OpenAi, _apiKey),
+            });
+            IChatClient chatClient = api.AsChatClient(model);
+
+            XtraReport? best = null;
+            IReadOnlyList<string>? bestIssues = null;
+            var parseFailed = false;
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                SetStatus($"Attempt {attempt}: asking {model} for a report spec…");
+                var response = await chatClient.GetResponseAsync(new List<ChatMessage>
                 {
-                    report = retry;
-                    issues = retryIssues;
+                    new(ChatRole.System, systemPrompt),
+                    new(ChatRole.User, prompt + (parseFailed
+                        ? "\n\nYour previous response was not valid JSON for the required shape. Output ONLY the JSON object."
+                        : "")),
+                });
+                var spec = ReportSpecTranslator.ParseSpec(response.Text);
+                if (spec == null) { parseFailed = true; continue; }
+
+                SetStatus($"Attempt {attempt}: translating spec…");
+                var report = ReportSpecTranslator.BuildReport(spec, _schemaService.Schema,
+                    AppConnectionName, BuildConnectionParameters(_connectionString));
+                var issues = SchemaSqlDataSourceFactory.ValidateBindings(report, _schemaService.Schema);
+                if (bestIssues == null || issues.Count < bestIssues.Count)
+                {
+                    best = report;
+                    bestIssues = issues;
                 }
+                if (bestIssues.Count == 0) break;
             }
 
-            if (issues.Count > 0)
+            if (best == null)
+                throw new InvalidOperationException($"{model} did not return a valid report spec after 3 attempts.");
+
+            if (bestIssues is { Count: > 0 })
             {
                 MessageBox.Show(
                     "The generated report has unresolved bindings you may want to fix in the designer:\n\n- " +
-                    string.Join("\n- ", issues.Take(12)) +
-                    (issues.Count > 12 ? $"\n… and {issues.Count - 12} more" : ""),
+                    string.Join("\n- ", bestIssues.Take(12)) +
+                    (bestIssues.Count > 12 ? $"\n… and {bestIssues.Count - 12} more" : ""),
                     "AI Report Generation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
-            OpenReport(report);
+            OpenReport(best);
         }
         catch (Exception ex)
         {
@@ -230,73 +255,6 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         return dialog.ShowDialog(this) == DialogResult.OK ? textBox.Text : null;
     }
 
-    /// <summary>
-    /// Routes generation-workflow callbacks to the UI thread: clarification questions
-    /// become dialogs, progress updates land on the status label.
-    /// </summary>
-    private sealed class WinFormsAIReportGenerationHost : IAIReportGenerationHost
-    {
-        private readonly Control _owner;
-        private readonly Action<string> _setStatus;
-
-        public WinFormsAIReportGenerationHost(Control owner, Action<string> setStatus)
-        {
-            _owner = owner;
-            _setStatus = setStatus;
-        }
-
-        public Task<PromptClarificationAnswer> ClarifyPromptAsync(PromptClarificationQuestion request)
-        {
-            var answer = (PromptClarificationAnswer)_owner.Invoke(() => ShowClarificationDialog(request));
-            return Task.FromResult(answer);
-        }
-
-        public void NotifyAsync(string status, string reasoning)
-        {
-            if (_owner.IsHandleCreated)
-                _owner.BeginInvoke(() => _setStatus(status));
-        }
-
-        private PromptClarificationAnswer ShowClarificationDialog(PromptClarificationQuestion request)
-        {
-            using var dialog = new Form
-            {
-                Text = "AI Assistant — Clarification",
-                Size = new System.Drawing.Size(520, 320),
-                StartPosition = FormStartPosition.CenterParent,
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                MaximizeBox = false,
-                MinimizeBox = false,
-            };
-            var label = new Label { Text = request.Text, Dock = DockStyle.Top, Height = 80, Padding = new Padding(5), AutoEllipsis = true };
-            var okButton = new Button { Text = "Answer", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom };
-            dialog.Controls.Add(label);
-            dialog.AcceptButton = okButton;
-
-            Func<string> getAnswer;
-            if (request.Choices is { Count: > 0 })
-            {
-                var listBox = new ListBox { Dock = DockStyle.Fill };
-                foreach (var choice in request.Choices) listBox.Items.Add(choice);
-                listBox.SelectedIndex = 0;
-                dialog.Controls.Add(listBox);
-                listBox.BringToFront();
-                getAnswer = () => listBox.SelectedItem?.ToString() ?? "";
-            }
-            else
-            {
-                var textBox = new TextBox { Multiline = true, Dock = DockStyle.Fill };
-                dialog.Controls.Add(textBox);
-                textBox.BringToFront();
-                getAnswer = () => textBox.Text;
-            }
-            dialog.Controls.Add(okButton);
-
-            return dialog.ShowDialog(_owner.FindForm()) == DialogResult.OK
-                ? PromptClarificationAnswer.FromValue(getAnswer())
-                : PromptClarificationAnswer.Canceled();
-        }
-    }
 
     private static AIReportPromptCollection BuildPredefinedPrompts()
     {

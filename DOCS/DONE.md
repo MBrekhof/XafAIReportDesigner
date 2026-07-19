@@ -1,5 +1,21 @@
 # Done
 
+#### RPT-007: Own AI pipeline — provider-agnostic prompt-to-report, productized
+
+Completed 2026-07-19 (branch `poc-own-pipeline`). Replaced the DX CTP black box with a two-stage
+pipeline: any LLM (via LLMTornado `AsChatClient`) fills a report-spec JSON; the deterministic
+`ReportSpecTranslator` (Module) builds the XtraReport. Wired into the Database ribbon's
+"Generate from Prompt" with a model dropdown (default gpt-5.4-mini, `OpenAI:GenerateModel`) and
+up-to-3-rolls keep-best. Verified: 5 headless runs, 0 validation issues, PDFs arithmetically
+checked (items, discounts, Subtotal/VAT/Grand Total); ~4s per generation vs 140–400s DX-CTP.
+Hard-won translator rules (verified by diffing DX-generated layout XML via `poc/dump-layout.cs`):
+ONE root-level DetailReportBand with full absolute relation path (nesting/intermediate bands
+break iteration), EXPLICIT DataSource on the band (else only first detail row prints while
+footer aggregates still see all rows), totals as top-level `Sum()`/`Count()`/`Avg()` with
+`TextFormatString` (a `FormatString()` wrapper silently defeats summary evaluation), and
+`RepairChains()` — BFS over the relation graph deterministically fixing under-qualified,
+over-qualified, and wrong-direction field chains. Harness: `poc/generate-poc.cs`.
+
 #### RPT-006: Polish the headless generation path (ID: 1061)
 
 Completed 2026-07-19. Binding validation (`ValidateBindings` resolves every expression path and

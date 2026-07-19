@@ -9,12 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Standalone WinForms AI-powered report designer built on DevExpress XtraReports 26.1 and AI
-Integration. Three AI paths: the `ReportPromptToReportBehavior` wizard, the `ReportModifyBehavior`
-chat (edits open layouts), and a headless pipeline via the 26.1 cross-platform API
-(`GeneratePromptToReportAsync`) that feeds the AI a curated schema including FK relationships —
-the only path that produces correct master-detail reports. Entity metadata is discovered via
-reflection from a shared Module assembly containing Northwind-style business objects.
+Standalone WinForms AI-powered report designer built on DevExpress XtraReports 26.1. Primary AI
+path: the **own pipeline** (Database ribbon → Generate from Prompt) — any LLM via LLMTornado
+fills a report-spec JSON, the deterministic `ReportSpecTranslator` (Module) builds the
+XtraReport; ~4s per generation, works on models the DX CTP workflow cannot use. Secondary DX CTP
+paths: the `ReportPromptToReportBehavior` wizard and the `ReportModifyBehavior` chat (both
+require gpt-5.2). Entity metadata is discovered via reflection from a shared Module assembly
+containing Northwind-style business objects.
 
 ## Build & Run Commands
 
@@ -50,17 +51,25 @@ There is no formal test suite.
   paths, one hop per DetailReportBand); `Attach()` attaches a data source to a generated report
   (snapshots band DataMembers first — assigning DataSource resets them); `ValidateBindings()`
   resolves every expression path against the schema/relation graph.
-- **`AIReportDesignerForm`** — Report Designer shell: attaches both AI behaviors
+- **`ReportSpecTranslator`** (Module) — the own pipeline's deterministic half: spec records +
+  `BuildSystemPrompt()` + `ParseSpec()` + `BuildReport()`. Encodes the proven band shapes (ONE
+  root-level DetailReportBand with full absolute path and EXPLICIT DataSource; totals as
+  top-level `Sum()` with `TextFormatString`) and `RepairChains()` (BFS over the relation graph
+  repairs under-/over-qualified and wrong-direction field chains). `poc/generate-poc.cs` is the
+  headless harness driving this exact code.
+- **`AIReportDesignerForm`** — Report Designer shell: attaches both DX behaviors
   (Temperature = 1 — GPT-5-series requirement), Database ribbon (Load/Save to PostgreSQL,
-  headless Generate from Prompt with validation + fresh-retry keep-best),
+  Generate from Prompt via the own pipeline + model dropdown, up to 3 rolls keep-best),
   `AppConnectionStorageService` (wizard connection list + name-only serialization +
-  load-time credential restore), `WinFormsAIReportGenerationHost` (clarification dialogs).
+  load-time credential restore).
 - **`ReportDbContext`** (inner class in AIReportDesignerForm) — Lightweight DbContext mapping only `ReportDataV2` for report storage.
 
 ### Hard-won constraints (verified, do not regress)
 
-- Model must be **gpt-5.2** — only model that reliably completes the DX multi-agent workflow
-  (benchmarked: mini/5.6 tiers break or refuse). Temperature must be 1 for GPT-5-series.
+- DX CTP wizard/chat: model must be **gpt-5.2** — only model that reliably completes the DX
+  multi-agent workflow (benchmarked: mini/5.6 tiers break or refuse). Temperature must be 1 for
+  GPT-5-series. The own pipeline has no such restriction (default gpt-5.4-mini,
+  `OpenAI:GenerateModel` in config).
 - Repair-style requests (`PromptToReportRequest` with an existing report) regenerate broadly AND
   mutate the passed instance — use fresh-roll + keep-best instead.
 - Full recipes and gotchas: `DOCS/DONE.md` (RPT-001…RPT-004 entries).
@@ -87,7 +96,8 @@ Create `appsettings.Development.json` in the ReportDesigner project:
 {
   "OpenAI": {
     "ApiKey": "sk-...",
-    "Model": "gpt-5.2"
+    "Model": "gpt-5.2",
+    "GenerateModel": "gpt-5.4-mini"
   },
   "Database": {
     "ConnectionString": "Host=localhost;Port=5432;Database=xafaireportdesigner;Username=xaf;Password=xaf123",

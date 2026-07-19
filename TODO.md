@@ -1,6 +1,12 @@
 # TODO
 
-**Status: PARKED (2026-07-19).** The exploration succeeded — the full pipeline works and is
+**Status: ACTIVE — own pipeline productized on branch `poc-own-pipeline` (2026-07-19,
+RPT-007 in DONE.md).** "Generate from Prompt" now runs the own provider-agnostic pipeline
+(`ReportSpecTranslator` in the Module, model dropdown in the ribbon, default gpt-5.4-mini,
+~4s per generation). Branch awaits merge to master. The parking rationale below applies only
+to the abandoned DX-CTP generation path (wizard/chat remain as secondary paths).
+
+**Old status: PARKED (2026-07-19).** The exploration succeeded — the full pipeline works and is
 documented — but the result is not near useful as a product: generation takes 2.5–5 min per
 roll, only gpt-5.2 completes the DevExpress CTP workflow, and quality varies run to run behind
 a validation/retry safety net. Everything is pushed, documented (`README.md`, `DOCS/DONE.md`),
