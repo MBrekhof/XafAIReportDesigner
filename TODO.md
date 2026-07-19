@@ -26,16 +26,26 @@ Prompt-to-Report API are 26.1-only. 26.1 is installed locally alongside 25.2.
 a workaround for 25.x single-shot generation. The 26.1 wizard reads attached data-source metadata
 itself and asks for what's missing.
 
-- a) After RPT-001, test the wizard's "Add Data Source" flow against our PostgreSQL connection
-  (`XafAIReportDesigner` XPO connection registered in `Program.cs`) — confirm it picks up
-  tables/columns without the schema prompt.
-- b) Slim the predefined prompts to short intent-only templates (Order Summary, Product Catalog,
-  Invoice) without embedded schema.
-- c) Move the "use connection named XafAIReportDesigner" hint to
-  `behavior.Properties.PromptAugmentation` (one place) instead of repeating per prompt.
-- d) Keep `ReflectionSchemaDiscoveryService` — see RPT-004 for its new role.
+- a) ~~Test the wizard's "Add Data Source" flow against our PostgreSQL connection.~~ Found + fixed
+  a real bug: the wizard's connection list only reads the app config file, so the
+  `DefaultConnectionStringProvider` registration (which fixes *preview*) never showed there.
+  Fix: `AppConnectionStorageService : IConnectionStorageService` registered on the
+  `DesignMdiController` (AIReportDesignerForm.cs). Verified: wizard now lists
+  "XafAIReportDesigner", pre-selected. **Remaining (manual):** click through Next → tables →
+  prompt page → generate; also covers RPT-001's clarification-questions check.
+- b) ~~Slim the predefined prompts to short intent-only templates.~~ Done — three intent-only
+  prompts (Order Summary, Product Catalog, Invoice), schema blob and `_schemaPrompt` plumbing
+  removed.
+- c) ~~Move the connection hint to `behavior.Properties.PromptAugmentation`.~~ N/A, twice over
+  (dxdocs-verified): WinForms `ReportPromptToReportBehaviorProperties` has no `PromptAugmentation`
+  in 26.1 (that's prompt-to-*expression* / WPF only), and the hint is pointless anyway — the
+  connection is picked in the wizard's data-source step, not by the AI. Hint deleted.
+- d) Keep `ReflectionSchemaDiscoveryService` — see RPT-004 for its new role. (Still instantiated
+  and logged in Program.cs; only the text-blob handoff to the form was removed.)
 
 Docs: https://docs.devexpress.com/XtraReports/405460 (WinForms Prompt-to-Report, still CTP in 26.1).
+Setup note: DB `xafaireportdesigner` was missing after the repo rename — created it in the
+`xaf-postgres` container (postgres:17, host port 5432) and ran `seed-postgres.sql` (50 orders).
 
 #### RPT-003: Add AI "Modify Report" chat behavior (ID: 1058)
 
