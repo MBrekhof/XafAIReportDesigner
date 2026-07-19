@@ -1,5 +1,16 @@
 # Done
 
+#### RPT-006: Polish the headless generation path (ID: 1061)
+
+Completed 2026-07-19. Binding validation (`ValidateBindings` resolves every expression path and
+band DataMember against the schema/relation graph) + fresh-retry keep-best (repair-in-place
+measured worse: regenerates broadly AND mutates the passed report), elapsed-time/roll status,
+page-break + one-hop-per-band binding rules, Discount semantics fix verified. User click-through
+of Generate from Prompt done (slow but working; 'overview' report's 2 validation errors were
+real AI mistakes, repaired in place — two-hop band path and hallucinated column). Model
+benchmark: gpt-5.2 is the only model completing the DX CTP workflow (2.5–4.5 min/roll);
+gpt-5.4-mini and gpt-5.6 luna/terra break, refuse, or 400.
+
 #### RPT-004: Wire ReflectionSchemaDiscoveryService into the 26.1 cross-platform API (ID: 1059)
 
 Completed 2026-07-19, branch `rpt-004-headless-generation`. **The master-detail case the wizard
