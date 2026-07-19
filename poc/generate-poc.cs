@@ -75,6 +75,8 @@ var b = new NpgsqlConnectionStringBuilder(connString);
 var report = ReportSpecTranslator.BuildReport(spec, schemaService.Schema, "XafAIReportDesigner",
     new PostgreSqlConnectionParameters(b.Host, b.Port, b.Database, b.Username, b.Password));
 
+ReportSpecTranslator.AttachSpec(report, JsonSerializer.Serialize(spec), userPrompt);
+
 var issues = SchemaSqlDataSourceFactory.ValidateBindings(report, schemaService.Schema);
 Console.WriteLine($"[3] Translated in {stopwatch.Elapsed.TotalSeconds:F1}s. Validation: {issues.Count} issue(s)");
 foreach (var issue in issues) Console.WriteLine($"    - {issue}");
@@ -116,3 +118,32 @@ foreach (var sqlDs in DevExpress.XtraReports.DataSourceManager.GetDataSources(re
         sqlDs.ConnectionParameters = new PostgreSqlConnectionParameters(b.Host, b.Port, b.Database, b.Username, b.Password);
 reloaded.CreateDocument();
 Console.WriteLine($"[7] Reloaded layout renders {reloaded.Pages.Count} pages after credential restore.");
+
+// ---- Modify cycle (RPT-008): the exact operation the DX CTP chat failed on ----
+var reloadedSpec = ReportSpecTranslator.TryGetSpec(reloaded);
+Console.WriteLine($"[8] Spec survived layout round trip: {reloadedSpec != null}");
+if (reloadedSpec != null)
+{
+    stopwatch.Restart();
+    var modifySystem = ReportSpecTranslator.BuildModifySystemPrompt(schemaText, reloadedSpec);
+    ReportSpec? modSpec = null;
+    for (int attempt = 1; attempt <= 2 && modSpec == null; attempt++)
+    {
+        var r = await chatClient.GetResponseAsync(new List<ChatMessage>
+        {
+            new(ChatRole.System, modifySystem),
+            new(ChatRole.User, "Move the Quantity column to the first position." +
+                (attempt > 1 ? "\n\nOutput ONLY the JSON object." : "")),
+        });
+        modSpec = ReportSpecTranslator.ParseSpec(r.Text);
+    }
+    if (modSpec == null) { Console.WriteLine("[9] MODIFY FAILED: no valid spec"); return; }
+    var modReport = ReportSpecTranslator.BuildReport(modSpec, schemaService.Schema, "XafAIReportDesigner",
+        new PostgreSqlConnectionParameters(b.Host, b.Port, b.Database, b.Username, b.Password));
+    var modIssues = SchemaSqlDataSourceFactory.ValidateBindings(modReport, schemaService.Schema);
+    Console.WriteLine($"[9] Modified in {stopwatch.Elapsed.TotalSeconds:F1}s. Columns now: " +
+        $"[{string.Join(" | ", modSpec.Levels[^1].Columns.Select(c => c.Header))}]  validation: {modIssues.Count} issue(s)");
+    modReport.CreateDocument();
+    modReport.ExportToPdf(Path.Combine(scratch, "poc-invoice-modified.pdf"));
+    Console.WriteLine($"[10] Modified report rendered {modReport.Pages.Count} pages -> poc-invoice-modified.pdf");
+}

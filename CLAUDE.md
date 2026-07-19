@@ -59,7 +59,8 @@ There is no formal test suite.
   headless harness driving this exact code.
 - **`AIReportDesignerForm`** — Report Designer shell: attaches both DX behaviors
   (Temperature = 1 — GPT-5-series requirement), Database ribbon (Load/Save to PostgreSQL,
-  Generate from Prompt via the own pipeline + model dropdown, up to 3 rolls keep-best),
+  Generate from Prompt + Modify via AI via the own pipeline — shared RunSpecPipelineAsync,
+  model dropdown, up to 3 rolls keep-best; the spec JSON rides in XtraReport.Extensions),
   `AppConnectionStorageService` (wizard connection list + name-only serialization +
   load-time credential restore).
 - **`ReportDbContext`** (inner class in AIReportDesignerForm) — Lightweight DbContext mapping only `ReportDataV2` for report storage.

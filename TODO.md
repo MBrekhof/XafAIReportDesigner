@@ -23,17 +23,6 @@ and preserved in project memory.
 
 ## P2: Medium
 
-#### RPT-008: Own modify path — spec-level edits + re-translate (ID: 1062)
-
-Replace the DX CTP Modify chat (gpt-5.2-only, fails on structural edits: "move quantity to
-first column" errored once, then claimed success without changes — 2026-07-19 testing) with the
-own-pipeline trick applied to modification: persist the report's spec JSON alongside the saved
-layout, let a small LLM call edit the SPEC ("move quantity first" = reorder the columns array),
-then re-translate deterministically via `ReportSpecTranslator`. Reliable by construction, any
-model, ~2s; false "I did it" becomes impossible. Interim workaround: re-run Generate from
-Prompt with the tweak in the prompt (~4s). Design decision needed: where to persist the spec
-(extra column on ReportDataV2 vs. side table vs. embedded in layout).
-
 #### RPT-005: Blazor/Web Report Designer variant with the OWN pipeline (ID: 1060)
 
 Host the mature (non-CTP) Web Report Designer (ASP.NET Core/Blazor wrapper) and wire OUR

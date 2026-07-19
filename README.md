@@ -27,6 +27,10 @@ available as secondary paths.
     under-/over-qualified and wrong-direction field paths the LLM emits);
   - **validation + cheap retries** — up to 3 fresh rolls, best result wins; remaining issues
     are shown as a warning.
+- **Modify via AI** (same ribbon group) — spec-level modification for own-pipeline reports: the
+  spec JSON travels inside the layout (`XtraReport.Extensions`), the LLM edits the spec, the
+  translator rebuilds. Structural edits ("move quantity to the first column") are array edits —
+  reliable by construction, ~2-3s. Replaces the DX CTP Modify chat for these reports.
 - **Report persistence** — Load/Save to the XAF `ReportDataV2` table in PostgreSQL; saved layouts
   store the connection *name only* and credentials are restored on load.
 - Full DevExpress Report Designer ribbon UI.

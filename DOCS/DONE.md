@@ -1,5 +1,21 @@
 # Done
 
+#### RPT-008: Own modify path — spec-level edits + re-translate (ID: 1062)
+
+Completed 2026-07-19. "Modify via AI" ribbon button replaces the DX CTP Modify chat for
+own-pipeline reports: the report's spec JSON is embedded in the layout via
+`XtraReport.Extensions` (DX's documented mechanism for custom data — survives save/load,
+travels with the layout), a small LLM call edits the SPEC seeded by
+`BuildModifySystemPrompt`, and `ReportSpecTranslator` re-translates deterministically —
+structural edits are array edits, so the chat's "claimed success, no change" failure mode
+cannot occur. Shared `RunSpecPipelineAsync` (3 rolls keep-best) backs both Generate and
+Modify. Acceptance test = the exact case the chat failed on: "Move the Quantity column to
+the first position" → 2.4s, 0 validation issues, PDF verified (Quantity first, all data
+intact). Bonus: column width rule now gives the double-wide slot to the first TEXT column
+instead of position 0, so reordered numeric-first tables stay readable. Harness verifies the
+full loop: generate → save (name-only credentials) → reload → spec round trip → modify →
+render.
+
 #### RPT-007: Own AI pipeline — provider-agnostic prompt-to-report, productized
 
 Completed 2026-07-19 (branch `poc-own-pipeline`). Replaced the DX CTP black box with a two-stage

@@ -129,6 +129,13 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         generateItem.ItemClick += OnGenerateFromPrompt;
         aiGroup.ItemLinks.Add(generateItem);
 
+        // Spec-level modification: the LLM edits the report's embedded spec JSON, the
+        // translator rebuilds — structural edits (move a column) are just array edits,
+        // so the DX chat's "claimed success, no change" failure mode cannot occur.
+        var modifyItem = new BarButtonItem(ribbon.Manager, "Modify via AI");
+        modifyItem.ItemClick += OnModifyViaAI;
+        aiGroup.ItemLinks.Add(modifyItem);
+
         var modelCombo = new DevExpress.XtraEditors.Repository.RepositoryItemComboBox();
         modelCombo.Items.AddRange(new[] { "gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.2" });
         ribbon.Manager.RepositoryItems.Add(modelCombo);
@@ -151,11 +158,56 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             "Describe the report (the AI receives the full schema incl. relationships):");
         if (string.IsNullOrWhiteSpace(prompt)) return;
 
+        var schemaText = _schemaService.GenerateDataSourceSchema() + "\n" +
+            SchemaSqlDataSourceFactory.DescribeDataMembers(_schemaService.Schema);
+        await RunSpecPipelineAsync("AI Report Generation",
+            ReportSpecTranslator.BuildSystemPrompt(schemaText), prompt, prompt);
+    }
+
+    private async void OnModifyViaAI(object? sender, ItemClickEventArgs e)
+    {
+        var current = ActiveDesignPanel?.Report;
+        if (current == null)
+        {
+            MessageBox.Show("No active report to modify.", "Modify via AI",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        var currentSpec = ReportSpecTranslator.TryGetSpec(current);
+        if (currentSpec == null)
+        {
+            MessageBox.Show(
+                "This report has no embedded AI spec — only reports created via Generate from Prompt " +
+                "(or previously modified here) can be modified this way.",
+                "Modify via AI", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var change = PromptForText("Modify Report via AI",
+            "Describe the change (e.g. \"move the quantity column to the first position\"):");
+        if (string.IsNullOrWhiteSpace(change)) return;
+
+        var schemaText = _schemaService.GenerateDataSourceSchema() + "\n" +
+            SchemaSqlDataSourceFactory.DescribeDataMembers(_schemaService.Schema);
+        current.Extensions.TryGetValue(ReportSpecTranslator.PromptExtensionKey, out var originalPrompt);
+        var newReport = await RunSpecPipelineAsync("Modify via AI",
+            ReportSpecTranslator.BuildModifySystemPrompt(schemaText, currentSpec), change,
+            (originalPrompt ?? "") + "\n[modified]: " + change);
+        if (newReport != null) newReport.DisplayName = current.DisplayName;
+    }
+
+    /// <summary>
+    /// Shared own-pipeline loop: up to 3 LLM rolls, translate + validate each, keep the
+    /// best, embed the winning spec in the report, open it in the designer.
+    /// </summary>
+    private async Task<XtraReport?> RunSpecPipelineAsync(string title, string systemPrompt,
+        string userPrompt, string promptToEmbed)
+    {
         var model = _modelItem?.EditValue as string is { Length: > 0 } m ? m : _defaultGenerateModel;
 
         using var statusForm = new Form
         {
-            Text = "AI Report Generation",
+            Text = title,
             Size = new System.Drawing.Size(480, 120),
             StartPosition = FormStartPosition.CenterParent,
             FormBorderStyle = FormBorderStyle.FixedDialog,
@@ -170,13 +222,6 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
 
         try
         {
-            // Own pipeline: LLM fills a report-spec JSON, ReportSpecTranslator builds the
-            // layout deterministically. A roll costs seconds, so on parse failures or
-            // binding issues we simply roll again and keep the best result.
-            var schemaText = _schemaService.GenerateDataSourceSchema() + "\n" +
-                SchemaSqlDataSourceFactory.DescribeDataMembers(_schemaService.Schema);
-            var systemPrompt = ReportSpecTranslator.BuildSystemPrompt(schemaText);
-
             var api = new TornadoApi(new List<ProviderAuthentication>
             {
                 new ProviderAuthentication(LLmProviders.OpenAi, _apiKey),
@@ -184,6 +229,7 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             IChatClient chatClient = api.AsChatClient(model);
 
             XtraReport? best = null;
+            ReportSpec? bestSpec = null;
             IReadOnlyList<string>? bestIssues = null;
             var parseFailed = false;
             for (int attempt = 1; attempt <= 3; attempt++)
@@ -192,7 +238,7 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
                 var response = await chatClient.GetResponseAsync(new List<ChatMessage>
                 {
                     new(ChatRole.System, systemPrompt),
-                    new(ChatRole.User, prompt + (parseFailed
+                    new(ChatRole.User, userPrompt + (parseFailed
                         ? "\n\nYour previous response was not valid JSON for the required shape. Output ONLY the JSON object."
                         : "")),
                 });
@@ -206,13 +252,17 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
                 if (bestIssues == null || issues.Count < bestIssues.Count)
                 {
                     best = report;
+                    bestSpec = spec;
                     bestIssues = issues;
                 }
                 if (bestIssues.Count == 0) break;
             }
 
-            if (best == null)
+            if (best == null || bestSpec == null)
                 throw new InvalidOperationException($"{model} did not return a valid report spec after 3 attempts.");
+
+            ReportSpecTranslator.AttachSpec(best,
+                System.Text.Json.JsonSerializer.Serialize(bestSpec), promptToEmbed);
 
             if (bestIssues is { Count: > 0 })
             {
@@ -220,14 +270,16 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
                     "The generated report has unresolved bindings you may want to fix in the designer:\n\n- " +
                     string.Join("\n- ", bestIssues.Take(12)) +
                     (bestIssues.Count > 12 ? $"\n… and {bestIssues.Count - 12} more" : ""),
-                    "AI Report Generation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             OpenReport(best);
+            return best;
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Report generation failed:\n{ex.Message}", "AI Report Generation",
+            MessageBox.Show($"Operation failed:\n{ex.Message}", title,
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return null;
         }
         finally
         {
