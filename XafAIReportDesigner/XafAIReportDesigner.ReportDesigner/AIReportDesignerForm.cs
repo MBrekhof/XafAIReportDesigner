@@ -3,12 +3,17 @@ using System.IO;
 using System.Text;
 using DevExpress.AIIntegration.Reporting;
 using DevExpress.AIIntegration.WinForms.Reporting;
+using DevExpress.DataAccess.ConnectionParameters;
+using DevExpress.DataAccess.Sql;
+using DevExpress.DataAccess.Wizard.Model;
+using DevExpress.DataAccess.Wizard.Services;
 using DevExpress.Utils.Behaviors;
 using DevExpress.XtraBars;
 using DevExpress.XtraBars.Ribbon;
 using DevExpress.XtraReports.UI;
 using DevExpress.XtraReports.UserDesigner;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace XafAIReportDesigner.ReportDesigner;
 
@@ -22,12 +27,10 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     private readonly IContainer _components;
     private readonly BehaviorManager _behaviorManager;
     private readonly string _connectionString;
-    private readonly string _schemaPrompt;
 
-    public AIReportDesignerForm(string connectionString, string schemaPrompt)
+    public AIReportDesignerForm(string connectionString)
     {
         _connectionString = connectionString;
-        _schemaPrompt = schemaPrompt;
         _components = new Container();
         _behaviorManager = new BehaviorManager(_components);
 
@@ -44,6 +47,13 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         var mdiController = DesignMdiController;
         if (mdiController != null)
         {
+            // The wizard's connection list only reads the app config file, so the
+            // connection registered via DefaultConnectionStringProvider (preview/runtime
+            // resolution) never shows up there — expose it through this wizard-side service.
+            mdiController.RemoveService(typeof(IConnectionStorageService));
+            mdiController.AddService(typeof(IConnectionStorageService),
+                new AppConnectionStorageService(_connectionString));
+
             _behaviorManager.Attach<ReportPromptToReportBehavior>(mdiController, behavior =>
             {
                 behavior.Properties.RetryAttemptCount = 3;
@@ -84,65 +94,35 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         ribbon.Pages.Add(page);
     }
 
-    private AIReportPromptCollection BuildPredefinedPrompts()
+    private static AIReportPromptCollection BuildPredefinedPrompts()
     {
+        // Intent-only templates: the 26.1 wizard's "Add Data Source" step attaches
+        // the data source structure to the LLM prompt itself, and the connection is
+        // picked in the wizard UI — no schema text or connection hints needed here.
         var collection = AIReportPromptCollection.GetDefaultReportPrompts();
 
-        // Embed the full schema context so the AI uses real table/column names.
         collection.Add(new AIReportPrompt
         {
             Title = "Order Summary Report",
-            Text = $"""
-                {_schemaPrompt}
-
-                Create a report showing all orders with:
-                - Group by Customer (CompanyName)
-                - Columns: OrderDate, ShipName, ShipCity, Freight
-                - Sort by OrderDate descending
-                - Summary: total Freight per customer and grand total
-                - Use the connection named "XafAIReportDesigner"
-                """,
+            Text = "Create an order summary report grouped by customer company name " +
+                   "with order date, ship name, ship city, and freight columns, sorted by " +
+                   "order date descending. Show total freight per customer and a grand total.",
         });
 
         collection.Add(new AIReportPrompt
         {
             Title = "Product Catalog Report",
-            Text = $"""
-                {_schemaPrompt}
-
-                Create a product catalog report with:
-                - Group by Category (CategoryName)
-                - Columns: ProductName, QuantityPerUnit, UnitPrice, UnitsInStock
-                - Sort by ProductName within each category
-                - Summary: count of products per category, average UnitPrice
-                - Use the connection named "XafAIReportDesigner"
-                """,
+            Text = "Create a product catalog report grouped by category name with product name, " +
+                   "quantity per unit, unit price, and units in stock columns, sorted by product name " +
+                   "within each category. Show product count and average unit price per category.",
         });
 
         collection.Add(new AIReportPrompt
         {
             Title = "Invoice Report",
-            Text = $"""
-                {_schemaPrompt}
-
-                Create an invoice report with:
-                - Group by Customer (CompanyName)
-                - Columns: InvoiceDate, Amount, ShipName, ShipCity
-                - Sort by InvoiceDate descending
-                - Summary: total Amount per customer and grand total
-                - Use the connection named "XafAIReportDesigner"
-                """,
-        });
-
-        collection.Add(new AIReportPrompt
-        {
-            Title = "Custom Report (with schema context)",
-            Text = $"""
-                {_schemaPrompt}
-
-                Use the connection named "XafAIReportDesigner".
-                Create a report for: [describe your report here]
-                """,
+            Text = "Create an invoice report grouped by customer company name with invoice date, " +
+                   "amount, ship name, and ship city columns, sorted by invoice date descending. " +
+                   "Show total amount per customer and a grand total.",
         });
 
         return collection;
@@ -308,6 +288,29 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             return report.DataMember;
 
         return "";
+    }
+
+    /// <summary>
+    /// Supplies the app's PostgreSQL connection to the Data Source Wizard's
+    /// "existing connections" list. Name matches the DefaultConnectionStringProvider
+    /// registration in Program.cs so saved reports resolve at preview time.
+    /// </summary>
+    private sealed class AppConnectionStorageService : IConnectionStorageService
+    {
+        private readonly SqlDataConnection _connection;
+
+        public AppConnectionStorageService(string npgsqlConnectionString)
+        {
+            var b = new NpgsqlConnectionStringBuilder(npgsqlConnectionString);
+            _connection = new SqlDataConnection(
+                "XafAIReportDesigner",
+                new PostgreSqlConnectionParameters(b.Host, b.Port, b.Database, b.Username, b.Password));
+        }
+
+        public bool CanSaveConnection => false;
+        public bool Contains(string connectionName) => connectionName == _connection.Name;
+        public IEnumerable<SqlDataConnection> GetConnections() { yield return _connection; }
+        public void SaveConnection(string connectionName, IDataConnection dataConnection, bool saveCredentials) { }
     }
 
     private DbContext CreateDbContext()
