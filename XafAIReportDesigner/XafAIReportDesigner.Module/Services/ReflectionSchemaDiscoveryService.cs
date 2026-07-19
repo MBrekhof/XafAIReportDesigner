@@ -83,6 +83,83 @@ namespace XafAIReportDesigner.Module.Services
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Generates a factual PostgreSQL schema description (tables, columns, foreign keys)
+        /// for the 26.1 <c>PromptToReportRequest.DataSourceSchema</c> parameter. Unlike
+        /// <see cref="GenerateSystemPrompt"/>, this carries no persona or instructions —
+        /// the generation workflow supplies its own. Foreign keys are listed explicitly:
+        /// they are what the AI needs to build correct master-detail queries.
+        /// </summary>
+        public string GenerateDataSourceSchema()
+        {
+            var schema = Schema;
+            var sb = new StringBuilder();
+            sb.AppendLine("PostgreSQL database schema. Identifiers are case-sensitive and must be double-quoted in SQL.");
+            sb.AppendLine();
+
+            foreach (var entity in schema.Entities)
+            {
+                sb.Append($"Table \"{entity.TableName}\"");
+                if (!string.IsNullOrEmpty(entity.Description)) sb.Append($" — {entity.Description}");
+                sb.AppendLine();
+                sb.AppendLine("  \"ID\" uuid PRIMARY KEY");
+
+                foreach (var prop in entity.Properties)
+                {
+                    sb.Append($"  \"{prop.ColumnName}\" {GetSqlTypeName(prop.ClrType)}");
+                    if (prop.IsRequired) sb.Append(" NOT NULL");
+                    var underlying = Nullable.GetUnderlyingType(prop.ClrType) ?? prop.ClrType;
+                    if (underlying.IsEnum)
+                    {
+                        var values = Enum.GetValues(underlying).Cast<object>()
+                            .Select(v => $"{Convert.ToInt32(v)}={v}");
+                        sb.Append($" (enum {underlying.Name}: {string.Join(", ", values)})");
+                    }
+                    if (!string.IsNullOrEmpty(prop.Description)) sb.Append($" — {prop.Description}");
+                    sb.AppendLine();
+                }
+
+                // FK columns exist in the DB but are skipped from Properties by design.
+                foreach (var rel in entity.Relationships.Where(r => !r.IsCollection))
+                {
+                    if (entity.ClrType.GetProperty(rel.PropertyName + "Id") != null)
+                        sb.AppendLine($"  \"{rel.PropertyName}Id\" uuid — foreign key to \"{GetTableName(schema, rel.TargetEntity)}\".\"ID\"");
+                }
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("Foreign key relationships (use these to join tables and build master-detail structures):");
+            foreach (var entity in schema.Entities)
+            {
+                foreach (var rel in entity.Relationships.Where(r => !r.IsCollection))
+                {
+                    if (entity.ClrType.GetProperty(rel.PropertyName + "Id") != null)
+                        sb.AppendLine($"- \"{entity.TableName}\".\"{rel.PropertyName}Id\" -> \"{GetTableName(schema, rel.TargetEntity)}\".\"ID\" (each {rel.TargetEntity} has many {entity.TableName})");
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private static string GetTableName(SchemaInfo schema, string entityName) =>
+            schema.FindEntity(entityName)?.TableName ?? entityName;
+
+        private static string GetSqlTypeName(Type type)
+        {
+            var underlying = Nullable.GetUnderlyingType(type) ?? type;
+            if (underlying.IsEnum) return "integer";
+            if (underlying == typeof(string)) return "varchar";
+            if (underlying == typeof(int)) return "integer";
+            if (underlying == typeof(long)) return "bigint";
+            if (underlying == typeof(decimal)) return "numeric";
+            if (underlying == typeof(double)) return "double precision";
+            if (underlying == typeof(float)) return "real";
+            if (underlying == typeof(bool)) return "boolean";
+            if (underlying == typeof(DateTime)) return "timestamp";
+            if (underlying == typeof(Guid)) return "uuid";
+            return underlying.Name.ToLowerInvariant();
+        }
+
         private SchemaInfo Discover()
         {
             var entities = new List<EntityInfo>();
@@ -110,6 +187,10 @@ namespace XafAIReportDesigner.Module.Services
                 {
                     // Skip common infrastructure properties
                     if (prop.Name is "ID" or "GCRecord" or "OptimisticLockField")
+                        continue;
+
+                    // Skip computed get-only properties — they have no DB column.
+                    if (!prop.CanWrite)
                         continue;
 
                     // Skip foreign key ID properties (Guid? ending in Id with ForeignKey on another prop)

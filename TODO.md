@@ -4,27 +4,18 @@
 
 ## P2: Medium
 
-#### RPT-004: Wire ReflectionSchemaDiscoveryService into the 26.1 cross-platform API (ID: 1059)
+#### RPT-006: Polish the headless generation path (ID: 1061)
 
-26.1 adds `PromptToReportRequest(userPrompt, dataSourceSchema, report)` +
-`AIReportingIntegration.GeneratePromptToReportAsync()` — schema is a first-class parameter,
-supports updating an existing report, runs headless. Our `[AIVisible]`/`[AIDescription]` curation
-is still the value-add: it decides *what* the AI sees.
+Follow-ups from RPT-004 (see DONE.md for the full recipe):
 
-Evidence from RPT-003 testing (2026-07-19) strengthens the case: the wizard's multi-query data
-sources carry no relations, so master-detail layouts (invoice + items) bind wrong — the generated
-FableOne iterated all 150 OrderItems under one repeated invoice. Feeding FK relationships through
-`DataSourceSchema` is the only lever that could fix that class of report.
-
-- a) Check the actual type of `PromptToReportRequest.DataSourceSchema` and map
-  `ReflectionSchemaDiscoveryService` output onto it (replace `GenerateSystemPrompt()` text-blob
-  as the schema carrier).
-- b) Prototype a headless generation path (console or button): prompt → `GeneratePromptToReportAsync`
-  → open in designer / save to `ReportDataV2`.
-- c) Implement `IAIReportGenerationHost` for the clarification Q&A loop in that path.
-
-Docs: https://docs.devexpress.com/XtraReports/405279 (v26.1 release notes, cross-platform API section).
-Example: https://github.com/DevExpress-Examples/ai-powered-report-generation-in-console
+- a) Page-break placement: the AI puts an invoice's header and its items table in separate
+  DetailReportBands, so the break can land between them. Add a hint to the binding-rules text
+  ("keep a master row's header, detail table and totals together; break after totals") or
+  post-process PageBreak settings.
+- b) The in-app "Database → AI → Generate from Prompt" button and the WinForms clarification
+  dialog need a user click-through (the console host variant is verified end to end).
+- c) Regenerate RPT004-Invoice after the Discount `[AIDescription]` fix (seed stores percent
+  0–100; the first generation assumed a 0–1 fraction → some negative line totals).
 
 ## P3: Low
 

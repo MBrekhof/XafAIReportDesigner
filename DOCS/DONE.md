@@ -1,5 +1,32 @@
 # Done
 
+#### RPT-004: Wire ReflectionSchemaDiscoveryService into the 26.1 cross-platform API (ID: 1059)
+
+Completed 2026-07-19, branch `rpt-004-headless-generation`. **The master-detail case the wizard
+failed is solved**: headless generation produced a 21-page invoice run — one invoice per page,
+each with its own customer, dates, line items and per-invoice totals (verified by rendering
+against live PostgreSQL data; result saved to ReportDataV2 as "RPT004-Invoice").
+
+The working recipe (all doc-verified/empirically tested):
+
+- `PromptToReportRequest.DataSourceSchema` is a plain **string**. `GenerateDataSourceSchema()`
+  (Module) emits factual PostgreSQL schema text — tables, columns, enum values, and the FK graph.
+- **The API generates layout + bindings only — no data source component.** `SchemaSqlDataSourceFactory`
+  (Module) builds the matching `SqlDataSource`: one query per entity + `MasterDetailInfo` relations
+  for every FK in both directions (one-to-many "InvoicesOrders", lookup "OrdersCustomers";
+  self-referencing FKs skipped). `DescribeDataMembers()` tells the AI the exact binding rules:
+  root DataMember = master view, DetailReportBand paths are absolute relation-name paths
+  ("Invoices.InvoicesOrders.OrdersOrderItems"), expressions reach related rows via relation names.
+- **Gotcha:** assigning `XtraReport.DataSource` resets band DataMembers set without a source —
+  `SchemaSqlDataSourceFactory.Attach()` snapshots members, attaches, reassigns (normalizing
+  relative paths to absolute).
+- `IAIReportGenerationHost` works: the multi-agent flow asked a real clarification question
+  (page size, with choices) and resumed on answer. App has `WinFormsAIReportGenerationHost`
+  (dialogs + status label) behind Database → AI → "Generate from Prompt"; the scratch console
+  host auto-answers.
+- Discovery fix: computed get-only properties (Employee.FullName) are skipped — they have no
+  DB column and broke query validation.
+
 #### RPT-003: Add AI "Modify Report" chat behavior (ID: 1058)
 
 Completed 2026-07-19, branch `rpt-003-modify-report-chat`.

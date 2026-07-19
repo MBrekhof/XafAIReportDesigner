@@ -21,6 +21,7 @@ namespace XafAIReportDesigner.Module.BusinessObjects
         public virtual int Quantity { get; set; }
 
         [Column(TypeName = "decimal(5,2)")]
+        [AIDescription("Discount percentage from 0 to 100 (e.g. 5 means 5%); line total = Quantity * UnitPrice * (1 - Discount / 100)")]
         public virtual decimal Discount { get; set; }
 
         public virtual Guid? OrderId { get; set; }
