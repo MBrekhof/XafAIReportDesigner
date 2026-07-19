@@ -63,6 +63,13 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
                 behavior.Properties.PredefinedPrompts = BuildPredefinedPrompts();
             });
 
+            // AI Assistant chat panel: edit the open report layout in natural language (CTP).
+            _behaviorManager.Attach<ReportModifyBehavior>(mdiController, behavior =>
+            {
+                behavior.Properties.FixLayoutErrors = true;
+                behavior.Properties.RetryAttemptCount = 3;
+            });
+
             System.Diagnostics.Debug.WriteLine("[AIReportDesignerForm] ReportPromptToReportBehavior attached via Attach<T>");
         }
         else

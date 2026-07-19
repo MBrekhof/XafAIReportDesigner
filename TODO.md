@@ -5,9 +5,14 @@
 #### RPT-003: Add AI "Modify Report" chat behavior (ID: 1058)
 
 The AI Assistant chat panel that edits an existing layout in natural language (add bands/tables,
-restyle, group/sort/filter). WinForms-only, CTP, listed for 25.2+ — the feature that makes this
-app more useful than the stock wizard. Attach alongside `ReportPromptToReportBehavior` in
-`AIReportDesignerForm.OnLoad`.
+restyle, group/sort/filter). WinForms-only, CTP.
+
+Implemented on branch `rpt-003-modify-report-chat`: `ReportModifyBehavior` attached alongside
+`ReportPromptToReportBehavior` in `AIReportDesignerForm.OnLoad`; project SDK switched to
+`Microsoft.NET.Sdk.Razor` (required — the chat panel is a Blazor WebView). Build clean; smoke-run
+verified the AI Assistant panel renders (chat input + sample-prompt hint), Design Analyzer 0 errors.
+**Remaining (manual):** open a report, send a modification request (e.g. "Add a report header
+band."), confirm the layout changes.
 
 Docs: https://docs.devexpress.com/XtraReports/405498 (Modify Report Behavior, WinForms, CTP).
 
