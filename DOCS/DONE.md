@@ -7,8 +7,9 @@ Completed 2026-07-19, branch `rpt-003-modify-report-chat`.
 `ReportModifyBehavior` attached alongside the prompt-to-report behavior; project SDK switched to
 `Microsoft.NET.Sdk.Razor` (chat panel is a Blazor WebView). Along the way: default model bumped
 gpt-4o → gpt-5.2 with `Temperature = 1` on both behaviors (GPT-5 series rejects other values),
-and saved-report reloads fixed via `IConnectionProviderService` + `StoreConnectionNameOnly`
-(saving strips credentials from serialized connections).
+and saved-report reloads fixed (saving strips credentials from serialized connections;
+`IConnectionProviderService` only covers name-only connections, so `RestoreAppConnection()`
+reassigns full parameters after `LoadLayoutFromXml` — user-verified with FableOne).
 
 **User-verified working:** chat executes precise layout commands (bands, styling); wizard
 generates data-bound reports (FableOne/FableTwo).
