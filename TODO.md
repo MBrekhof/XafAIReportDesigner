@@ -21,14 +21,29 @@ and preserved in project memory.
   (`ReflectionSchemaDiscoveryService`, `SchemaSqlDataSourceFactory` incl. `ValidateBindings`)
   is UI-free and reusable as-is.
 
-## P3: Low
+## P2: Medium
 
-#### RPT-005: Blazor/Web Report Designer variant (ID: 1060)
+#### RPT-008: Own modify path — spec-level edits + re-translate (ID: 1062)
 
-Prompt-to-Report also exists in the Web Report Designer (ASP.NET Core & Blazor, CTP) — server-side
-registration via `AddDevExpressAI` → `AddWebReportingAIIntegration` → `AddPromptToReportConverter()`.
-Module + `ReportDataV2` storage are reusable as-is. Note: the Modify Report chat is
-WinForms-only; the web side has prompt-to-report, prompt-to-expression, AI test data, localization.
-Only worth doing if a web-hosted designer becomes a real requirement.
+Replace the DX CTP Modify chat (gpt-5.2-only, fails on structural edits: "move quantity to
+first column" errored once, then claimed success without changes — 2026-07-19 testing) with the
+own-pipeline trick applied to modification: persist the report's spec JSON alongside the saved
+layout, let a small LLM call edit the SPEC ("move quantity first" = reorder the columns array),
+then re-translate deterministically via `ReportSpecTranslator`. Reliable by construction, any
+model, ~2s; false "I did it" becomes impossible. Interim workaround: re-run Generate from
+Prompt with the tweak in the prompt (~4s). Design decision needed: where to persist the spec
+(extra column on ReportDataV2 vs. side table vs. embedded in layout).
+
+#### RPT-005: Blazor/Web Report Designer variant with the OWN pipeline (ID: 1060)
+
+Host the mature (non-CTP) Web Report Designer (ASP.NET Core/Blazor wrapper) and wire OUR
+pipeline server-side: a Generate endpoint calls `ReflectionSchemaDiscoveryService` +
+`ReportSpecTranslator` (all Module, UI-free) and opens the result in the browser designer;
+`ReportDataV2` storage reusable as-is. The own pipeline changed the calculus vs. the original
+note: DX's web AI (CTP, gpt-5.2) is NOT needed — our generation is already headless and
+provider-agnostic, so the web variant is mostly hosting plumbing (~1-2 days PoC). RPT-008's
+modify path surfaces naturally as a text box in the web UI. Caveat: translator uses
+System.Drawing fonts — fine on Windows hosting; a Linux container needs the DXFont/Skia swap.
+Pursue when browser access or XAF-Blazor embedding becomes a real requirement.
 
 Docs: https://docs.devexpress.com/XtraReports/405485 · Demo: https://demos.devexpress.com/blazor/AIPoweredExtensions/AIReportDesigner
