@@ -24,6 +24,8 @@ namespace XafAIReportDesigner.ReportDesigner;
 /// </summary>
 public sealed class AIReportDesignerForm : XRDesignRibbonForm
 {
+    private const string AppConnectionName = "XafAIReportDesigner";
+
     private readonly IContainer _components;
     private readonly BehaviorManager _behaviorManager;
     private readonly string _connectionString;
@@ -187,6 +189,7 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
                     var report = new XtraReport();
                     using var stream = new MemoryStream(selectedReport.Content);
                     report.LoadLayoutFromXml(stream);
+                    RestoreAppConnection(report);
                     OpenReport(report);
                 }
             }
@@ -305,6 +308,26 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     }
 
     /// <summary>
+    /// Saving a report strips credentials from serialized connection parameters, and
+    /// IConnectionProviderService is only consulted for name-only connections — so for
+    /// loaded layouts, reassign the full parameters on every app-named data source directly.
+    /// </summary>
+    private void RestoreAppConnection(XtraReport report)
+    {
+        foreach (var sqlDs in report.ComponentStorage.OfType<SqlDataSource>())
+        {
+            if (sqlDs.ConnectionName == AppConnectionName)
+                sqlDs.ConnectionParameters = BuildConnectionParameters(_connectionString);
+        }
+    }
+
+    private static PostgreSqlConnectionParameters BuildConnectionParameters(string npgsqlConnectionString)
+    {
+        var b = new NpgsqlConnectionStringBuilder(npgsqlConnectionString);
+        return new PostgreSqlConnectionParameters(b.Host, b.Port, b.Database, b.Username, b.Password);
+    }
+
+    /// <summary>
     /// Supplies the app's PostgreSQL connection to the Data Source Wizard's
     /// "existing connections" list. Name matches the DefaultConnectionStringProvider
     /// registration in Program.cs so saved reports resolve at preview time.
@@ -315,10 +338,9 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
 
         public AppConnectionStorageService(string npgsqlConnectionString)
         {
-            var b = new NpgsqlConnectionStringBuilder(npgsqlConnectionString);
             _connection = new SqlDataConnection(
-                "XafAIReportDesigner",
-                new PostgreSqlConnectionParameters(b.Host, b.Port, b.Database, b.Username, b.Password))
+                AppConnectionName,
+                BuildConnectionParameters(npgsqlConnectionString))
             {
                 // Serialize only the name into report layouts; LoadConnection restores
                 // the full parameters (saved layouts never carry credentials).
