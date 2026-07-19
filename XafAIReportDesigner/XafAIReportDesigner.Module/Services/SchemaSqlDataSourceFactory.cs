@@ -60,6 +60,7 @@ namespace XafAIReportDesigner.Module.Services
             sb.AppendLine("Report binding rules for the attached data source (follow these exactly):");
             sb.AppendLine("- Set the report's DataMember to the master view name (e.g. \"Invoices\"); the root Detail band repeats once per master row.");
             sb.AppendLine("- A DetailReportBand's DataMember must be an ABSOLUTE relation path that starts at the report's master view and uses RELATION NAMES, e.g. \"Invoices.InvoicesOrders\" and nested \"Invoices.InvoicesOrders.OrdersOrderItems\".");
+            sb.AppendLine("- Each DetailReportBand may add exactly ONE relation segment beyond its parent's path — to traverse two relations, NEST two DetailReportBands (a single band with a two-hop path only reads the first related row).");
             sb.AppendLine("- In expressions, reach related rows through relation names: [OrdersCustomers].[CompanyName] returns the order's customer name; Sum([OrdersOrderItems].[Quantity]) aggregates over an order's items.");
             sb.AppendLine("- Scalar fields of the current row bind directly: a label in a band bound to \"Invoices\" uses plain [InvoiceNumber] or Concat('Date: ', FormatString('{0:d}', [InvoiceDate])). Never leave a label's expression empty ([]).");
             sb.AppendLine("- Expressions are relative to the band's own row context: in a band whose DataMember ends at Orders, aggregate with Sum([OrdersOrderItems].[Quantity]) — NOT with the full path from the master view ([InvoicesOrders].[...] does not exist on an Orders row).");
@@ -147,6 +148,9 @@ namespace XafAIReportDesigner.Module.Services
             {
                 foreach (XRControl child in control.Controls)
                 {
+                    // Nested bands surface in Controls too — the band walk validates them
+                    // with their own data context.
+                    if (child is Band) continue;
                     foreach (var binding in child.ExpressionBindings.Cast<ExpressionBinding>())
                         ValidateExpression(binding.Expression, child.Name, band.Name, contextEntity);
                     ValidateControls(child, band, contextEntity);
