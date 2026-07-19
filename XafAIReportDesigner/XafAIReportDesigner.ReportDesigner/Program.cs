@@ -65,6 +65,6 @@ static class Program
                 ["XafAIReportDesigner"] = xpoConnectionString
             });
 
-        Application.Run(new AIReportDesignerForm(connectionString));
+        Application.Run(new AIReportDesignerForm(connectionString, schemaService));
     }
 }

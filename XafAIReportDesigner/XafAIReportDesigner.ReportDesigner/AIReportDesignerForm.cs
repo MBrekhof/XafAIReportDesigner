@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using System.IO;
 using System.Text;
+using DevExpress.AIIntegration;
 using DevExpress.AIIntegration.Reporting;
+using DevExpress.AIIntegration.Reporting.Common.Extensions;
 using DevExpress.AIIntegration.WinForms.Reporting;
 using DevExpress.DataAccess.ConnectionParameters;
 using DevExpress.DataAccess.Sql;
@@ -14,6 +16,7 @@ using DevExpress.XtraReports.UI;
 using DevExpress.XtraReports.UserDesigner;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using XafAIReportDesigner.Module.Services;
 
 namespace XafAIReportDesigner.ReportDesigner;
 
@@ -29,10 +32,12 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     private readonly IContainer _components;
     private readonly BehaviorManager _behaviorManager;
     private readonly string _connectionString;
+    private readonly ReflectionSchemaDiscoveryService _schemaService;
 
-    public AIReportDesignerForm(string connectionString)
+    public AIReportDesignerForm(string connectionString, ReflectionSchemaDiscoveryService schemaService)
     {
         _connectionString = connectionString;
+        _schemaService = schemaService;
         _components = new Container();
         _behaviorManager = new BehaviorManager(_components);
 
@@ -107,7 +112,149 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         group.ItemLinks.Add(loadItem);
         group.ItemLinks.Add(saveItem);
         page.Groups.Add(group);
+
+        // Headless generation via the 26.1 cross-platform API — unlike the wizard,
+        // this path feeds the AI our curated schema including FK relationships.
+        var aiGroup = new RibbonPageGroup("AI");
+        var generateItem = new BarButtonItem(ribbon.Manager, "Generate from Prompt");
+        generateItem.ItemClick += OnGenerateFromPrompt;
+        aiGroup.ItemLinks.Add(generateItem);
+        page.Groups.Add(aiGroup);
+
         ribbon.Pages.Add(page);
+    }
+
+    private async void OnGenerateFromPrompt(object? sender, ItemClickEventArgs e)
+    {
+        var prompt = PromptForText("Generate Report from Prompt",
+            "Describe the report (the AI receives the full schema incl. relationships):");
+        if (string.IsNullOrWhiteSpace(prompt)) return;
+
+        using var statusForm = new Form
+        {
+            Text = "AI Report Generation",
+            Size = new System.Drawing.Size(480, 120),
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            ControlBox = false,
+        };
+        var statusLabel = new Label { Dock = DockStyle.Fill, Padding = new Padding(10), Text = "Starting…" };
+        statusForm.Controls.Add(statusLabel);
+        statusForm.Show(this);
+
+        try
+        {
+            var schemaText = _schemaService.GenerateDataSourceSchema() + "\n" +
+                SchemaSqlDataSourceFactory.DescribeDataMembers(_schemaService.Schema);
+            var request = new PromptToReportRequest(prompt, schemaText)
+            {
+                ReportGenerationHost = new WinFormsAIReportGenerationHost(this, s => statusLabel.Text = s),
+                FixLayoutErrors = true,
+            };
+            var report = await AIExtensionsContainerDesktop.Default.GeneratePromptToReportAsync(request);
+
+            // The API generates layout + bindings only — attach the matching data source.
+            SchemaSqlDataSourceFactory.Attach(report,
+                _schemaService.Schema, AppConnectionName, BuildConnectionParameters(_connectionString));
+            OpenReport(report);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Report generation failed:\n{ex.Message}", "AI Report Generation",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            statusForm.Close();
+        }
+    }
+
+    private string? PromptForText(string title, string caption)
+    {
+        using var dialog = new Form
+        {
+            Text = title,
+            Size = new System.Drawing.Size(520, 260),
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+        };
+        var label = new Label { Text = caption, Dock = DockStyle.Top, Height = 30, Padding = new Padding(5) };
+        var textBox = new TextBox { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
+        var okButton = new Button { Text = "Generate", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom };
+        dialog.Controls.Add(textBox);
+        dialog.Controls.Add(label);
+        dialog.Controls.Add(okButton);
+        return dialog.ShowDialog(this) == DialogResult.OK ? textBox.Text : null;
+    }
+
+    /// <summary>
+    /// Routes generation-workflow callbacks to the UI thread: clarification questions
+    /// become dialogs, progress updates land on the status label.
+    /// </summary>
+    private sealed class WinFormsAIReportGenerationHost : IAIReportGenerationHost
+    {
+        private readonly Control _owner;
+        private readonly Action<string> _setStatus;
+
+        public WinFormsAIReportGenerationHost(Control owner, Action<string> setStatus)
+        {
+            _owner = owner;
+            _setStatus = setStatus;
+        }
+
+        public Task<PromptClarificationAnswer> ClarifyPromptAsync(PromptClarificationQuestion request)
+        {
+            var answer = (PromptClarificationAnswer)_owner.Invoke(() => ShowClarificationDialog(request));
+            return Task.FromResult(answer);
+        }
+
+        public void NotifyAsync(string status, string reasoning)
+        {
+            if (_owner.IsHandleCreated)
+                _owner.BeginInvoke(() => _setStatus(status));
+        }
+
+        private PromptClarificationAnswer ShowClarificationDialog(PromptClarificationQuestion request)
+        {
+            using var dialog = new Form
+            {
+                Text = "AI Assistant — Clarification",
+                Size = new System.Drawing.Size(520, 320),
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+            };
+            var label = new Label { Text = request.Text, Dock = DockStyle.Top, Height = 80, Padding = new Padding(5), AutoEllipsis = true };
+            var okButton = new Button { Text = "Answer", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom };
+            dialog.Controls.Add(label);
+            dialog.AcceptButton = okButton;
+
+            Func<string> getAnswer;
+            if (request.Choices is { Count: > 0 })
+            {
+                var listBox = new ListBox { Dock = DockStyle.Fill };
+                foreach (var choice in request.Choices) listBox.Items.Add(choice);
+                listBox.SelectedIndex = 0;
+                dialog.Controls.Add(listBox);
+                listBox.BringToFront();
+                getAnswer = () => listBox.SelectedItem?.ToString() ?? "";
+            }
+            else
+            {
+                var textBox = new TextBox { Multiline = true, Dock = DockStyle.Fill };
+                dialog.Controls.Add(textBox);
+                textBox.BringToFront();
+                getAnswer = () => textBox.Text;
+            }
+            dialog.Controls.Add(okButton);
+
+            return dialog.ShowDialog(_owner.FindForm()) == DialogResult.OK
+                ? PromptClarificationAnswer.FromValue(getAnswer())
+                : PromptClarificationAnswer.Canceled();
+        }
     }
 
     private static AIReportPromptCollection BuildPredefinedPrompts()
