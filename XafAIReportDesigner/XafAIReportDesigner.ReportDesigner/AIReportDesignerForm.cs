@@ -1,13 +1,9 @@
-using System.ComponentModel;
 using System.IO;
 using System.Text;
-using DevExpress.AIIntegration.Reporting;
-using DevExpress.AIIntegration.WinForms.Reporting;
 using DevExpress.DataAccess.ConnectionParameters;
 using DevExpress.DataAccess.Sql;
 using DevExpress.DataAccess.Wizard.Model;
 using DevExpress.DataAccess.Wizard.Services;
-using DevExpress.Utils.Behaviors;
 using DevExpress.XtraBars;
 using DevExpress.XtraBars.Ribbon;
 using DevExpress.XtraReports.UI;
@@ -23,16 +19,14 @@ using XafAIReportDesigner.Module.Services;
 namespace XafAIReportDesigner.ReportDesigner;
 
 /// <summary>
-/// Standalone report designer form with AI Prompt-to-Report behavior.
-/// Extends <see cref="XRDesignRibbonForm"/> and attaches the behavior
-/// using the documented <c>Attach&lt;T&gt;</c> API.
+/// Standalone report designer form. AI generation and modification run through the own
+/// provider-agnostic pipeline (Database ribbon → Generate from Prompt / Modify via AI):
+/// the LLM fills a report-spec JSON, <see cref="ReportSpecTranslator"/> builds the layout.
 /// </summary>
 public sealed class AIReportDesignerForm : XRDesignRibbonForm
 {
     private const string AppConnectionName = "XafAIReportDesigner";
 
-    private readonly IContainer _components;
-    private readonly BehaviorManager _behaviorManager;
     private readonly string _connectionString;
     private readonly ReflectionSchemaDiscoveryService _schemaService;
     private readonly string _apiKey;
@@ -46,8 +40,6 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         _schemaService = schemaService;
         _apiKey = apiKey;
         _defaultGenerateModel = defaultGenerateModel;
-        _components = new Container();
-        _behaviorManager = new BehaviorManager(_components);
 
         Text = "AI Report Designer";
         WindowState = FormWindowState.Maximized;
@@ -57,12 +49,10 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     {
         base.OnLoad(e);
 
-        // Attach AI Prompt-to-Report behavior to the MDI controller.
-        // Using OnLoad to ensure the designer is fully initialized.
         var mdiController = DesignMdiController;
         if (mdiController != null)
         {
-            // The wizard's connection list only reads the app config file, so the
+            // The Data Source Wizard's connection list only reads the app config file, so the
             // connection registered via DefaultConnectionStringProvider (preview/runtime
             // resolution) never shows up there — expose it through this wizard-side service.
             // The same service restores credentials on load: layouts store the connection
@@ -72,31 +62,6 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             mdiController.AddService(typeof(IConnectionStorageService), connectionService);
             mdiController.RemoveService(typeof(IConnectionProviderService));
             mdiController.AddService(typeof(IConnectionProviderService), connectionService);
-
-            _behaviorManager.Attach<ReportPromptToReportBehavior>(mdiController, behavior =>
-            {
-                behavior.Properties.RetryAttemptCount = 3;
-                behavior.Properties.FixLayoutErrors = true;
-                // GPT-5-series models reject temperature values other than 1 (DX docs warning).
-                behavior.Properties.Temperature = 1f;
-
-                // Build schema-aware predefined prompts so the AI knows the actual database structure.
-                behavior.Properties.PredefinedPrompts = BuildPredefinedPrompts();
-            });
-
-            // AI Assistant chat panel: edit the open report layout in natural language (CTP).
-            _behaviorManager.Attach<ReportModifyBehavior>(mdiController, behavior =>
-            {
-                behavior.Properties.FixLayoutErrors = true;
-                behavior.Properties.RetryAttemptCount = 3;
-                behavior.Properties.Temperature = 1f;
-            });
-
-            System.Diagnostics.Debug.WriteLine("[AIReportDesignerForm] ReportPromptToReportBehavior attached via Attach<T>");
-        }
-        else
-        {
-            System.Diagnostics.Debug.WriteLine("[AIReportDesignerForm] DesignMdiController is NULL — cannot attach behavior");
         }
 
         AddDatabaseMenuItems();
@@ -305,41 +270,6 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         dialog.Controls.Add(label);
         dialog.Controls.Add(okButton);
         return dialog.ShowDialog(this) == DialogResult.OK ? textBox.Text : null;
-    }
-
-
-    private static AIReportPromptCollection BuildPredefinedPrompts()
-    {
-        // Intent-only templates: the 26.1 wizard's "Add Data Source" step attaches
-        // the data source structure to the LLM prompt itself, and the connection is
-        // picked in the wizard UI — no schema text or connection hints needed here.
-        var collection = AIReportPromptCollection.GetDefaultReportPrompts();
-
-        collection.Add(new AIReportPrompt
-        {
-            Title = "Order Summary Report",
-            Text = "Create an order summary report grouped by customer company name " +
-                   "with order date, ship name, ship city, and freight columns, sorted by " +
-                   "order date descending. Show total freight per customer and a grand total.",
-        });
-
-        collection.Add(new AIReportPrompt
-        {
-            Title = "Product Catalog Report",
-            Text = "Create a product catalog report grouped by category name with product name, " +
-                   "quantity per unit, unit price, and units in stock columns, sorted by product name " +
-                   "within each category. Show product count and average unit price per category.",
-        });
-
-        collection.Add(new AIReportPrompt
-        {
-            Title = "Invoice Report",
-            Text = "Create an invoice report grouped by customer company name with invoice date, " +
-                   "amount, ship name, and ship city columns, sorted by invoice date descending. " +
-                   "Show total amount per customer and a grand total.",
-        });
-
-        return collection;
     }
 
     private void OnLoadFromDatabase(object? sender, ItemClickEventArgs e)
@@ -592,13 +522,4 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         }
     }
 
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            _behaviorManager?.Dispose();
-            _components?.Dispose();
-        }
-        base.Dispose(disposing);
-    }
 }

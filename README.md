@@ -1,18 +1,14 @@
 # XafAIReportDesigner
 
 Standalone WinForms AI-powered report designer built on DevExpress XtraReports 26.1. Reports are
-generated from natural-language prompts against a Northwind-style PostgreSQL data model — the
-primary path is an **own provider-agnostic AI pipeline** (any model via LLMTornado; ~4s per
-generation) that handles master-detail correctly; the DevExpress CTP wizard and chat remain
-available as secondary paths.
+generated and modified from natural-language prompts against a Northwind-style PostgreSQL data
+model through an **own provider-agnostic AI pipeline** (any model via LLMTornado; ~4s per
+generation, ~2s per modification) that handles master-detail correctly. The DevExpress AI CTP
+integration was evaluated first and abandoned (slow, gpt-5.2-only, unreliable chat — full story
+in DOCS/DONE.md).
 
 ## Features
 
-- **AI Prompt-to-Report wizard** (DevExpress `ReportPromptToReportBehavior`, multi-agent, CTP) —
-  create reports from a prompt; the wizard attaches data-source metadata and asks clarification
-  questions when the prompt is ambiguous.
-- **AI Assistant chat** (`ReportModifyBehavior`, CTP) — edit the open report in natural language:
-  add bands/tables, restyle, group/sort/filter. Command-style instructions work; questions don't.
 - **Own AI pipeline** (Database → AI → *Generate from Prompt*, with a model dropdown) — the LLM
   fills a small report-spec JSON; the deterministic `ReportSpecTranslator` builds the XtraReport.
   Provider-agnostic via LLMTornado — proven on gpt-5.4-mini (a model the DX CTP workflow cannot
@@ -39,9 +35,8 @@ available as secondary paths.
 
 - .NET 10.0 SDK
 - PostgreSQL (a `postgres:17` container works; seed with `seed-postgres.sql`)
-- OpenAI API key. The own pipeline works with any capable model (default `gpt-5.4-mini`).
-  The DevExpress CTP wizard/chat still require `gpt-5.2` — the only model that reliably
-  completes the DX multi-agent workflow.
+- OpenAI API key. Any capable model works (default `gpt-5.4-mini`; pick per generation via
+  the ribbon's Model dropdown).
 - DevExpress 26.1 license (local NuGet feed)
 
 ## Quick Start
@@ -57,7 +52,6 @@ available as secondary paths.
    {
      "OpenAI": {
        "ApiKey": "sk-your-key-here",
-       "Model": "gpt-5.2",
        "GenerateModel": "gpt-5.4-mini"
      },
      "Database": {
@@ -77,16 +71,13 @@ available as secondary paths.
 - The own pipeline's spec covers title/master fields/nested levels/columns/totals — the common
   report shapes. Exotic layouts (cross-tabs, charts, side-by-side subreports) are not in the
   spec yet; extend `ReportSpec` + `ReportSpecTranslator` as needs appear.
-- The DX CTP paths keep their old caveats: 2–5 min per generation on gpt-5.2 only; the Modify
-  chat executes layout *commands* only (questions fail with a JSON parse error).
 - Keep prompts free of data semantics that contradict the schema (e.g. discount formulas) —
   newer models refuse on contradictions, older ones silently pick a side.
 
 ## Tech Stack
 
-- .NET 10.0 (`net10.0` / `net10.0-windows`, ReportDesigner uses the Razor SDK — the AI chat
-  panel is a Blazor WebView)
-- DevExpress XtraReports + AI Integration 26.1.3
+- .NET 10.0 (`net10.0` / `net10.0-windows`)
+- DevExpress XtraReports 26.1.3
 - EF Core 8.0.18 + PostgreSQL (Npgsql 8)
-- LLMTornado + Microsoft.Extensions.AI 10.x — the own pipeline talks to any provider through
-  `IChatClient`; OpenAI SDK remains for the DX CTP behaviors
+- LLMTornado + Microsoft.Extensions.AI — the pipeline talks to any provider through
+  `IChatClient`

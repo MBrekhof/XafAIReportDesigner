@@ -1,6 +1,4 @@
-using DevExpress.AIIntegration;
 using DevExpress.DataAccess;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using XafAIReportDesigner.Module.Services;
 
@@ -21,9 +19,8 @@ static class Program
             .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: false)
             .Build();
 
-        // Register OpenAI client for AI report behaviors.
+        // API key for the own AI pipeline (LLMTornado — any provider/model).
         var apiKey = configuration["OpenAI:ApiKey"];
-        var model = configuration["OpenAI:Model"] ?? "gpt-4o";
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
@@ -34,12 +31,6 @@ static class Program
                 MessageBoxIcon.Error);
             return;
         }
-
-        IChatClient chatClient = new OpenAI.OpenAIClient(apiKey)
-            .GetChatClient(model)
-            .AsIChatClient();
-
-        AIExtensionsContainerDesktop.Default.RegisterChatClient(chatClient);
 
         // Discover entities from the Module assembly for AI context.
         var moduleAssembly = typeof(XafAIReportDesigner.Module.Attributes.AIVisibleAttribute).Assembly;

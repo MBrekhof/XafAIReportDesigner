@@ -9,13 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Standalone WinForms AI-powered report designer built on DevExpress XtraReports 26.1. Primary AI
-path: the **own pipeline** (Database ribbon → Generate from Prompt) — any LLM via LLMTornado
-fills a report-spec JSON, the deterministic `ReportSpecTranslator` (Module) builds the
-XtraReport; ~4s per generation, works on models the DX CTP workflow cannot use. Secondary DX CTP
-paths: the `ReportPromptToReportBehavior` wizard and the `ReportModifyBehavior` chat (both
-require gpt-5.2). Entity metadata is discovered via reflection from a shared Module assembly
-containing Northwind-style business objects.
+Standalone WinForms AI-powered report designer built on DevExpress XtraReports 26.1. All AI
+runs through the **own pipeline** (Database ribbon → Generate from Prompt / Modify via AI) —
+any LLM via LLMTornado fills a report-spec JSON, the deterministic `ReportSpecTranslator`
+(Module) builds the XtraReport; ~4s per generation. The DevExpress AI CTP integration
+(wizard/chat behaviors) was evaluated and REMOVED 2026-07-19 — slow, gpt-5.2-only, unreliable
+chat; recipes preserved in DOCS/DONE.md. Entity metadata is discovered via reflection from a
+shared Module assembly containing Northwind-style business objects.
 
 ## Build & Run Commands
 
@@ -57,20 +57,18 @@ There is no formal test suite.
   top-level `Sum()` with `TextFormatString`) and `RepairChains()` (BFS over the relation graph
   repairs under-/over-qualified and wrong-direction field chains). `poc/generate-poc.cs` is the
   headless harness driving this exact code.
-- **`AIReportDesignerForm`** — Report Designer shell: attaches both DX behaviors
-  (Temperature = 1 — GPT-5-series requirement), Database ribbon (Load/Save to PostgreSQL,
-  Generate from Prompt + Modify via AI via the own pipeline — shared RunSpecPipelineAsync,
-  model dropdown, up to 3 rolls keep-best; the spec JSON rides in XtraReport.Extensions),
+- **`AIReportDesignerForm`** — Report Designer shell: Database ribbon (Load/Save to
+  PostgreSQL, Generate from Prompt + Modify via AI — shared RunSpecPipelineAsync, model
+  dropdown, up to 3 rolls keep-best; the spec JSON rides in XtraReport.Extensions),
   `AppConnectionStorageService` (wizard connection list + name-only serialization +
   load-time credential restore).
 - **`ReportDbContext`** (inner class in AIReportDesignerForm) — Lightweight DbContext mapping only `ReportDataV2` for report storage.
 
 ### Hard-won constraints (verified, do not regress)
 
-- DX CTP wizard/chat: model must be **gpt-5.2** — only model that reliably completes the DX
-  multi-agent workflow (benchmarked: mini/5.6 tiers break or refuse). Temperature must be 1 for
-  GPT-5-series. The own pipeline has no such restriction (default gpt-5.4-mini,
-  `OpenAI:GenerateModel` in config).
+- The own pipeline has no model restriction (default gpt-5.4-mini, `OpenAI:GenerateModel`).
+  Historical: the removed DX CTP workflow ran ONLY on gpt-5.2 at Temperature 1 — if the DX AI
+  integration is ever revisited, start from the DONE.md recipes, not from scratch.
 - Repair-style requests (`PromptToReportRequest` with an existing report) regenerate broadly AND
   mutate the passed instance — use fresh-roll + keep-best instead.
 - Full recipes and gotchas: `DOCS/DONE.md` (RPT-001…RPT-004 entries).
@@ -83,12 +81,11 @@ There is no formal test suite.
 
 ## Tech Stack
 
-- .NET 10.0 (net10.0 / net10.0-windows; ReportDesigner uses `Microsoft.NET.Sdk.Razor` — the AI
-  chat panel is a Blazor WebView)
-- DevExpress XtraReports + AI Integration 26.1.3
+- .NET 10.0 (net10.0 / net10.0-windows)
+- DevExpress XtraReports 26.1.3 + LLMTornado (any-provider IChatClient)
 - DevExpress Persistent Base/BaseImpl.EFCore 26.1.3, DevExpress.Reporting.Core 26.1.3 (Module)
 - EF Core 8.0.18 + PostgreSQL (Npgsql 8)
-- OpenAI SDK 2.x + Microsoft.Extensions.AI(.OpenAI) 10.x
+- Microsoft.Extensions.AI abstractions (via LlmTornado.Microsoft.Extensions.AI)
 
 ## Configuration
 
@@ -97,7 +94,6 @@ Create `appsettings.Development.json` in the ReportDesigner project:
 {
   "OpenAI": {
     "ApiKey": "sk-...",
-    "Model": "gpt-5.2",
     "GenerateModel": "gpt-5.4-mini"
   },
   "Database": {

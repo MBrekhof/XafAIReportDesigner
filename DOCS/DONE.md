@@ -1,5 +1,17 @@
 # Done
 
+#### RPT-009: Remove DevExpress AI CTP integration — own pipeline is the only AI path
+
+Completed 2026-07-19, at the user's direction on merging to master. Removed
+`ReportPromptToReportBehavior` (wizard AI), `ReportModifyBehavior` (chat panel),
+`AIExtensionsContainerDesktop` client registration, `BuildPredefinedPrompts`, the
+`DevExpress.AIIntegration.WinForms.Reporting` / `OpenAI` / `Microsoft.Extensions.AI.OpenAI`
+packages, and the Razor SDK (only the Blazor chat WebView needed it — csproj is plain
+`Microsoft.NET.Sdk` again). Config `OpenAI:Model` (gpt-5.2) is no longer read; only `ApiKey` +
+`GenerateModel`. The DevExpress *designer platform* (shell, preview, Data Source Wizard,
+`AppConnectionStorageService`, ReportDataV2 storage) is untouched. If DX de-CTPs their AI and
+it's ever worth revisiting, the working recipes are in RPT-004/006/007 below.
+
 #### RPT-008: Own modify path — spec-level edits + re-translate (ID: 1062)
 
 Completed 2026-07-19. "Modify via AI" ribbon button replaces the DX CTP Modify chat for
