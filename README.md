@@ -29,7 +29,12 @@ in DOCS/DONE.md).
   reliable by construction, ~2-3s. Replaces the DX CTP Modify chat for these reports.
 - **Report persistence** — Load/Save to the XAF `ReportDataV2` table in PostgreSQL; saved layouts
   store the connection *name only* and credentials are restored on load.
-- Full DevExpress Report Designer ribbon UI.
+- Full DevExpress Report Designer ribbon UI (WinForms).
+- **Web variant** (`XafAIReportDesigner.Web`, Blazor Server) — the same pipeline + the browser
+  Report Designer (`DxReportDesigner`): generate/modify from the home page, edit and preview in
+  the browser. Shares `ReportDataV2` storage with the WinForms app.
+  `dotnet run --project XafAIReportDesigner/XafAIReportDesigner.Web` → http://localhost:5210
+  (needs its own `appsettings.Development.json`, same shape).
 
 ## Prerequisites
 

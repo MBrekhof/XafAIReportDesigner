@@ -1,10 +1,9 @@
 # TODO
 
-**Status: ACTIVE — own pipeline productized on branch `poc-own-pipeline` (2026-07-19,
-RPT-007 in DONE.md).** "Generate from Prompt" now runs the own provider-agnostic pipeline
-(`ReportSpecTranslator` in the Module, model dropdown in the ribbon, default gpt-5.4-mini,
-~4s per generation). Branch awaits merge to master. The parking rationale below applies only
-to the abandoned DX-CTP generation path (wizard/chat remain as secondary paths).
+**Status: ACTIVE (2026-07-19).** The own provider-agnostic AI pipeline is merged to master
+(Generate + Modify via AI, any model, ~4s; DX AI CTP fully removed — RPT-007..009 in DONE.md).
+The Blazor/Web variant (RPT-005) is built on branch `rpt-005-web-designer`, awaiting merge.
+The parking note below is historical (abandoned DX-CTP path).
 
 **Old status: PARKED (2026-07-19).** The exploration succeeded — the full pipeline works and is
 documented — but the result is not near useful as a product: generation takes 2.5–5 min per
@@ -21,18 +20,3 @@ and preserved in project memory.
   (`ReflectionSchemaDiscoveryService`, `SchemaSqlDataSourceFactory` incl. `ValidateBindings`)
   is UI-free and reusable as-is.
 
-## P2: Medium
-
-#### RPT-005: Blazor/Web Report Designer variant with the OWN pipeline (ID: 1060)
-
-Host the mature (non-CTP) Web Report Designer (ASP.NET Core/Blazor wrapper) and wire OUR
-pipeline server-side: a Generate endpoint calls `ReflectionSchemaDiscoveryService` +
-`ReportSpecTranslator` (all Module, UI-free) and opens the result in the browser designer;
-`ReportDataV2` storage reusable as-is. The own pipeline changed the calculus vs. the original
-note: DX's web AI (CTP, gpt-5.2) is NOT needed — our generation is already headless and
-provider-agnostic, so the web variant is mostly hosting plumbing (~1-2 days PoC). RPT-008's
-modify path surfaces naturally as a text box in the web UI. Caveat: translator uses
-System.Drawing fonts — fine on Windows hosting; a Linux container needs the DXFont/Skia swap.
-Pursue when browser access or XAF-Blazor embedding becomes a real requirement.
-
-Docs: https://docs.devexpress.com/XtraReports/405485 · Demo: https://demos.devexpress.com/blazor/AIPoweredExtensions/AIReportDesigner

@@ -5,4 +5,5 @@
   </Configurations>
   <Project Path="XafAIReportDesigner/XafAIReportDesigner.Module/XafAIReportDesigner.Module.csproj" />
   <Project Path="XafAIReportDesigner/XafAIReportDesigner.ReportDesigner/XafAIReportDesigner.ReportDesigner.csproj" />
+  <Project Path="XafAIReportDesigner/XafAIReportDesigner.Web/XafAIReportDesigner.Web.csproj" />
 </Solution>

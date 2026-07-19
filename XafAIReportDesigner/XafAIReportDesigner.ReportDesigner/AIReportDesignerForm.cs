@@ -193,41 +193,14 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             });
             IChatClient chatClient = api.AsChatClient(model);
 
-            XtraReport? best = null;
-            ReportSpec? bestSpec = null;
-            IReadOnlyList<string>? bestIssues = null;
-            var parseFailed = false;
-            for (int attempt = 1; attempt <= 3; attempt++)
-            {
-                SetStatus($"Attempt {attempt}: asking {model} for a report spec…");
-                var response = await chatClient.GetResponseAsync(new List<ChatMessage>
-                {
-                    new(ChatRole.System, systemPrompt),
-                    new(ChatRole.User, userPrompt + (parseFailed
-                        ? "\n\nYour previous response was not valid JSON for the required shape. Output ONLY the JSON object."
-                        : "")),
-                });
-                var spec = ReportSpecTranslator.ParseSpec(response.Text);
-                if (spec == null) { parseFailed = true; continue; }
+            var result = await SpecPipeline.RollBestAsync(chatClient, _schemaService.Schema,
+                systemPrompt, userPrompt, promptToEmbed,
+                AppConnectionName, BuildConnectionParameters(_connectionString), SetStatus);
+            var best = result.Report;
+            var bestIssues = result.Issues;
 
-                SetStatus($"Attempt {attempt}: translating spec…");
-                var report = ReportSpecTranslator.BuildReport(spec, _schemaService.Schema,
-                    AppConnectionName, BuildConnectionParameters(_connectionString));
-                var issues = SchemaSqlDataSourceFactory.ValidateBindings(report, _schemaService.Schema);
-                if (bestIssues == null || issues.Count < bestIssues.Count)
-                {
-                    best = report;
-                    bestSpec = spec;
-                    bestIssues = issues;
-                }
-                if (bestIssues.Count == 0) break;
-            }
-
-            if (best == null || bestSpec == null)
+            if (best == null)
                 throw new InvalidOperationException($"{model} did not return a valid report spec after 3 attempts.");
-
-            ReportSpecTranslator.AttachSpec(best,
-                System.Text.Json.JsonSerializer.Serialize(bestSpec), promptToEmbed);
 
             if (bestIssues is { Count: > 0 })
             {

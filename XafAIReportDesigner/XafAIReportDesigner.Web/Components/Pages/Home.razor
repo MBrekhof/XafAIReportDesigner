@@ -1,0 +1,112 @@
+@page "/"
+@rendermode InteractiveServer
+@inject AIReportService Ai
+@inject ReportDataV2Store Store
+@inject NavigationManager Nav
+
+<div class="content">
+    <h1>AI Report Designer — Web</h1>
+    <p>
+        Model:
+        <select @bind="Model">
+            @foreach (var m in AIReportService.KnownModels)
+            {
+                <option value="@m">@m</option>
+            }
+        </select>
+    </p>
+
+    <h3>Generate a new report</h3>
+    <p><textarea rows="4" cols="90" placeholder="Describe the report (the AI receives the full schema incl. relationships)…" @bind="Prompt"></textarea></p>
+    <p>
+        Save as: <input type="text" @bind="NewReportName" />
+        <button disabled="@Busy" @onclick="Generate">Generate</button>
+    </p>
+
+    <h3>Modify an existing AI report</h3>
+    <p>
+        Report:
+        <select @bind="SelectedReport">
+            <option value="">— select —</option>
+            @foreach (var name in _reports)
+            {
+                <option value="@name">@name</option>
+            }
+        </select>
+    </p>
+    <p><textarea rows="3" cols="90" placeholder="Describe the change, e.g. 'move the quantity column to the first position'…" @bind="Change"></textarea></p>
+    <p><button disabled="@Busy" @onclick="Modify">Modify via AI</button></p>
+
+    @if (!string.IsNullOrEmpty(Status))
+    {
+        <p class="status" id="status">@Status</p>
+    }
+    @if (_issues.Count > 0)
+    {
+        <ul class="issues">
+            @foreach (var issue in _issues)
+            {
+                <li>@issue</li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    string Model { get; set; } = "";
+    string Prompt { get; set; } = "";
+    string NewReportName { get; set; } = "";
+    string SelectedReport { get; set; } = "";
+    string Change { get; set; } = "";
+    string Status { get; set; } = "";
+    bool Busy { get; set; }
+
+    IReadOnlyList<string> _reports = [];
+    IReadOnlyList<string> _issues = [];
+
+    protected override void OnInitialized()
+    {
+        Model = Ai.DefaultModel;
+        _reports = Store.ListNames();
+    }
+
+    async Task Generate()
+    {
+        if (string.IsNullOrWhiteSpace(Prompt) || string.IsNullOrWhiteSpace(NewReportName)) { Status = "Enter a prompt and a report name."; return; }
+        await Run(() => Ai.GenerateAsync(Prompt, Model, NewReportName.Trim(), Store, SetStatus), NewReportName.Trim());
+    }
+
+    async Task Modify()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedReport) || string.IsNullOrWhiteSpace(Change)) { Status = "Pick a report and describe the change."; return; }
+        await Run(() => Ai.ModifyAsync(SelectedReport, Change, Model, Store, SetStatus), SelectedReport);
+    }
+
+    async Task Run(Func<Task<AIReportResult>> action, string reportName)
+    {
+        Busy = true;
+        _issues = [];
+        try
+        {
+            var result = await action();
+            Status = result.Message;
+            _issues = result.Issues;
+            if (result.Success)
+                Nav.NavigateTo($"/designer?report={Uri.EscapeDataString(reportName)}");
+        }
+        catch (Exception ex)
+        {
+            Status = "Failed: " + ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    void SetStatus(string status)
+    {
+        Status = status;
+        _ = InvokeAsync(StateHasChanged);
+    }
+}
