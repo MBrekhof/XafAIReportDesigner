@@ -46,6 +46,10 @@ itself and asks for what's missing.
 Docs: https://docs.devexpress.com/XtraReports/405460 (WinForms Prompt-to-Report, still CTP in 26.1).
 Setup note: DB `xafaireportdesigner` was missing after the repo rename — created it in the
 `xaf-postgres` container (postgres:17, host port 5432) and ran `seed-postgres.sql` (50 orders).
+The container itself had to be recreated (same data volume): the 4-month-old container started
+with its 5432 port publish silently inactive (connection refused from the host, fine via
+`docker exec`), which is what the first wizard test tripped over. DevExpress path verified end
+to end afterwards with a scratch C# repro (SqlDataSource.Fill against xafaireportdesigner OK).
 
 #### RPT-003: Add AI "Modify Report" chat behavior (ID: 1058)
 
