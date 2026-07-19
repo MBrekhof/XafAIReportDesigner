@@ -209,7 +209,7 @@ namespace XafAIReportDesigner.Module.Services
             return entity;
         }
 
-        private static Dictionary<(string Master, string RelationName), string> BuildRelationMap(SchemaInfo schema)
+        public static Dictionary<(string Master, string RelationName), string> BuildRelationMap(SchemaInfo schema)
         {
             var map = new Dictionary<(string, string), string>();
             foreach (var fk in ForeignKeys(schema).Where(f => f.OwnerTable != f.TargetTable))
@@ -220,7 +220,7 @@ namespace XafAIReportDesigner.Module.Services
             return map;
         }
 
-        private static Dictionary<string, HashSet<string>> BuildColumnMap(SchemaInfo schema)
+        public static Dictionary<string, HashSet<string>> BuildColumnMap(SchemaInfo schema)
         {
             var map = new Dictionary<string, HashSet<string>>();
             foreach (var entity in schema.Entities)
