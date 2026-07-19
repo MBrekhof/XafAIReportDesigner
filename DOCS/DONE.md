@@ -1,5 +1,49 @@
 # Done
 
+#### RPT-009: Remove DevExpress AI CTP integration — own pipeline is the only AI path
+
+Completed 2026-07-19, at the user's direction on merging to master. Removed
+`ReportPromptToReportBehavior` (wizard AI), `ReportModifyBehavior` (chat panel),
+`AIExtensionsContainerDesktop` client registration, `BuildPredefinedPrompts`, the
+`DevExpress.AIIntegration.WinForms.Reporting` / `OpenAI` / `Microsoft.Extensions.AI.OpenAI`
+packages, and the Razor SDK (only the Blazor chat WebView needed it — csproj is plain
+`Microsoft.NET.Sdk` again). Config `OpenAI:Model` (gpt-5.2) is no longer read; only `ApiKey` +
+`GenerateModel`. The DevExpress *designer platform* (shell, preview, Data Source Wizard,
+`AppConnectionStorageService`, ReportDataV2 storage) is untouched. If DX de-CTPs their AI and
+it's ever worth revisiting, the working recipes are in RPT-004/006/007 below.
+
+#### RPT-008: Own modify path — spec-level edits + re-translate (ID: 1062)
+
+Completed 2026-07-19. "Modify via AI" ribbon button replaces the DX CTP Modify chat for
+own-pipeline reports: the report's spec JSON is embedded in the layout via
+`XtraReport.Extensions` (DX's documented mechanism for custom data — survives save/load,
+travels with the layout), a small LLM call edits the SPEC seeded by
+`BuildModifySystemPrompt`, and `ReportSpecTranslator` re-translates deterministically —
+structural edits are array edits, so the chat's "claimed success, no change" failure mode
+cannot occur. Shared `RunSpecPipelineAsync` (3 rolls keep-best) backs both Generate and
+Modify. Acceptance test = the exact case the chat failed on: "Move the Quantity column to
+the first position" → 2.4s, 0 validation issues, PDF verified (Quantity first, all data
+intact). Bonus: column width rule now gives the double-wide slot to the first TEXT column
+instead of position 0, so reordered numeric-first tables stay readable. Harness verifies the
+full loop: generate → save (name-only credentials) → reload → spec round trip → modify →
+render.
+
+#### RPT-007: Own AI pipeline — provider-agnostic prompt-to-report, productized
+
+Completed 2026-07-19 (branch `poc-own-pipeline`). Replaced the DX CTP black box with a two-stage
+pipeline: any LLM (via LLMTornado `AsChatClient`) fills a report-spec JSON; the deterministic
+`ReportSpecTranslator` (Module) builds the XtraReport. Wired into the Database ribbon's
+"Generate from Prompt" with a model dropdown (default gpt-5.4-mini, `OpenAI:GenerateModel`) and
+up-to-3-rolls keep-best. Verified: 5 headless runs, 0 validation issues, PDFs arithmetically
+checked (items, discounts, Subtotal/VAT/Grand Total); ~4s per generation vs 140–400s DX-CTP.
+Hard-won translator rules (verified by diffing DX-generated layout XML via `poc/dump-layout.cs`):
+ONE root-level DetailReportBand with full absolute relation path (nesting/intermediate bands
+break iteration), EXPLICIT DataSource on the band (else only first detail row prints while
+footer aggregates still see all rows), totals as top-level `Sum()`/`Count()`/`Avg()` with
+`TextFormatString` (a `FormatString()` wrapper silently defeats summary evaluation), and
+`RepairChains()` — BFS over the relation graph deterministically fixing under-qualified,
+over-qualified, and wrong-direction field chains. Harness: `poc/generate-poc.cs`.
+
 #### RPT-006: Polish the headless generation path (ID: 1061)
 
 Completed 2026-07-19. Binding validation (`ValidateBindings` resolves every expression path and

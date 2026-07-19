@@ -1,6 +1,12 @@
 # TODO
 
-**Status: PARKED (2026-07-19).** The exploration succeeded — the full pipeline works and is
+**Status: ACTIVE — own pipeline productized on branch `poc-own-pipeline` (2026-07-19,
+RPT-007 in DONE.md).** "Generate from Prompt" now runs the own provider-agnostic pipeline
+(`ReportSpecTranslator` in the Module, model dropdown in the ribbon, default gpt-5.4-mini,
+~4s per generation). Branch awaits merge to master. The parking rationale below applies only
+to the abandoned DX-CTP generation path (wizard/chat remain as secondary paths).
+
+**Old status: PARKED (2026-07-19).** The exploration succeeded — the full pipeline works and is
 documented — but the result is not near useful as a product: generation takes 2.5–5 min per
 roll, only gpt-5.2 completes the DevExpress CTP workflow, and quality varies run to run behind
 a validation/retry safety net. Everything is pushed, documented (`README.md`, `DOCS/DONE.md`),
@@ -15,14 +21,18 @@ and preserved in project memory.
   (`ReflectionSchemaDiscoveryService`, `SchemaSqlDataSourceFactory` incl. `ValidateBindings`)
   is UI-free and reusable as-is.
 
-## P3: Low
+## P2: Medium
 
-#### RPT-005: Blazor/Web Report Designer variant (ID: 1060)
+#### RPT-005: Blazor/Web Report Designer variant with the OWN pipeline (ID: 1060)
 
-Prompt-to-Report also exists in the Web Report Designer (ASP.NET Core & Blazor, CTP) — server-side
-registration via `AddDevExpressAI` → `AddWebReportingAIIntegration` → `AddPromptToReportConverter()`.
-Module + `ReportDataV2` storage are reusable as-is. Note: the Modify Report chat is
-WinForms-only; the web side has prompt-to-report, prompt-to-expression, AI test data, localization.
-Only worth doing if a web-hosted designer becomes a real requirement.
+Host the mature (non-CTP) Web Report Designer (ASP.NET Core/Blazor wrapper) and wire OUR
+pipeline server-side: a Generate endpoint calls `ReflectionSchemaDiscoveryService` +
+`ReportSpecTranslator` (all Module, UI-free) and opens the result in the browser designer;
+`ReportDataV2` storage reusable as-is. The own pipeline changed the calculus vs. the original
+note: DX's web AI (CTP, gpt-5.2) is NOT needed — our generation is already headless and
+provider-agnostic, so the web variant is mostly hosting plumbing (~1-2 days PoC). RPT-008's
+modify path surfaces naturally as a text box in the web UI. Caveat: translator uses
+System.Drawing fonts — fine on Windows hosting; a Linux container needs the DXFont/Skia swap.
+Pursue when browser access or XAF-Blazor embedding becomes a real requirement.
 
 Docs: https://docs.devexpress.com/XtraReports/405485 · Demo: https://demos.devexpress.com/blazor/AIPoweredExtensions/AIReportDesigner

@@ -1,5 +1,4 @@
-<!-- Razor SDK required by ReportModifyBehavior's AI Assistant chat panel (Blazor WebView). -->
-<Project Sdk="Microsoft.NET.Sdk.Razor">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -10,10 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="DevExpress.AIIntegration.WinForms.Reporting" Version="26.1.3" />
     <PackageReference Include="DevExpress.Win.Design" Version="26.1.3" />
-    <PackageReference Include="OpenAI" Version="2.*" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.*" />
+    <PackageReference Include="LlmTornado" Version="*" />
+    <PackageReference Include="LlmTornado.Microsoft.Extensions.AI" Version="*" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.*" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.*" />
   </ItemGroup>
