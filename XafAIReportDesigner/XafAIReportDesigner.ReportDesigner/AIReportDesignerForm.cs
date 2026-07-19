@@ -460,7 +460,10 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     /// </summary>
     private void RestoreAppConnection(XtraReport report)
     {
-        foreach (var sqlDs in report.ComponentStorage.OfType<SqlDataSource>())
+        // DataSourceManager, not ComponentStorage — the latter misses data sources
+        // referenced only by DetailReportBands (own-pipeline reports have one).
+        foreach (var sqlDs in DevExpress.XtraReports.DataSourceManager
+                     .GetDataSources(report, includeSubReports: true).OfType<SqlDataSource>())
         {
             if (sqlDs.ConnectionName == AppConnectionName)
                 sqlDs.ConnectionParameters = BuildConnectionParameters(_connectionString);

@@ -24,6 +24,7 @@ using XafAIReportDesigner.Module.Services;
 var scratch = @"C:\Users\marti\AppData\Local\Temp\claude\C--projects-XafAIReportDesigner\77dafe7e-785d-4ecc-ae67-832a9096119f\scratchpad";
 var connString = "Host=localhost;Port=5432;Database=xafaireportdesigner;Username=xaf;Password=xaf123";
 var model = Environment.GetEnvironmentVariable("MODEL_OVERRIDE") ?? "gpt-5.4-mini";
+var reportName = Environment.GetEnvironmentVariable("REPORT_NAME") ?? "PoC-Invoice";
 
 var config = JsonDocument.Parse(File.ReadAllText(
     @"C:\projects\XafAIReportDesigner\XafAIReportDesigner\XafAIReportDesigner.ReportDesigner\appsettings.Development.json"));
@@ -85,13 +86,33 @@ report.ExportToPdf(Path.Combine(scratch, "poc-invoice.pdf"));
 
 await using var conn = new NpgsqlConnection(connString);
 await conn.OpenAsync();
-await using (var del = new NpgsqlCommand("DELETE FROM \"ReportDataV2\" WHERE \"DisplayName\" = 'PoC-Invoice'", conn))
+await using (var del = new NpgsqlCommand("DELETE FROM \"ReportDataV2\" WHERE \"DisplayName\" = @name", conn))
+{
+    del.Parameters.AddWithValue("name", reportName);
     await del.ExecuteNonQueryAsync();
+}
 using var ms = new MemoryStream();
 report.SaveLayoutToXml(ms);
+var layoutBytes = ms.ToArray();
 await using var cmd = new NpgsqlCommand(
     "INSERT INTO \"ReportDataV2\" (\"DisplayName\", \"Content\", \"DataTypeName\", \"IsInplaceReport\", \"IsPredefined\") " +
-    "VALUES ('PoC-Invoice', @content, '', false, false)", conn);
-cmd.Parameters.AddWithValue("content", ms.ToArray());
+    "VALUES (@name, @content, '', false, false)", conn);
+cmd.Parameters.AddWithValue("name", reportName);
+cmd.Parameters.AddWithValue("content", layoutBytes);
 await cmd.ExecuteNonQueryAsync();
-Console.WriteLine($"[5] Saved to ReportDataV2 as 'PoC-Invoice'. Total LLM time {llmSeconds:F1}s vs DevExpress pipeline 140-400s.");
+Console.WriteLine($"[5] Saved to ReportDataV2 as '{reportName}'. Total LLM time {llmSeconds:F1}s vs DevExpress pipeline 140-400s.");
+
+// Round trip: the saved layout must carry the connection NAME only (no credentials —
+// embedded parameters trip the designer's safe-loading warning), and must render again
+// after the app's load-time credential restore.
+var layoutXml = System.Text.Encoding.UTF8.GetString(layoutBytes);
+Console.WriteLine($"[6] Layout credentials check: Password serialized = {layoutXml.Contains("assword")}, ConnectionString serialized = {layoutXml.Contains("ConnectionString")}");
+var reloaded = new DevExpress.XtraReports.UI.XtraReport();
+using (var rs = new MemoryStream(layoutBytes)) reloaded.LoadLayoutFromXml(rs);
+// ComponentStorage misses data sources referenced only by bands — enumerate them all.
+foreach (var sqlDs in DevExpress.XtraReports.DataSourceManager.GetDataSources(reloaded, includeSubReports: true)
+             .OfType<DevExpress.DataAccess.Sql.SqlDataSource>())
+    if (sqlDs.ConnectionName == "XafAIReportDesigner")
+        sqlDs.ConnectionParameters = new PostgreSqlConnectionParameters(b.Host, b.Port, b.Database, b.Username, b.Password);
+reloaded.CreateDocument();
+Console.WriteLine($"[7] Reloaded layout renders {reloaded.Pages.Count} pages after credential restore.");

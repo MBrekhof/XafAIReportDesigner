@@ -22,6 +22,11 @@ namespace XafAIReportDesigner.Module.Services
                 Name = "AppDataSource",
                 ConnectionName = connectionName,
             };
+            // Serialize the connection NAME only — embedded credentials both leak into saved
+            // layouts and trip the designer's safe-loading warning on every open. The name is
+            // resolved back to parameters by IConnectionProviderService (registered on the
+            // designer) or RestoreAppConnection on DB load.
+            dataSource.Connection.StoreConnectionNameOnly = true;
 
             foreach (var entity in schema.Entities)
             {
