@@ -1,0 +1,31 @@
+# Done
+
+#### RPT-001: Upgrade DevExpress 25.2.3 → 26.1 (ID: 1056)
+
+Completed 2026-07-19, branch `rpt-001-devexpress-26.1`.
+
+All four DevExpress packages bumped to 26.1.3. `Microsoft.Extensions.AI.OpenAI` moved `9.*` → `10.*`
+(the 9.* pin was already being lifted to 10.3.0 by the 26.1 dependency graph; transitive
+`Microsoft.Extensions.AI` = 10.5.1, matching the docs). EF Core 8.0.18 / Npgsql 8.x unchanged —
+exactly what 26.1.3's `Persistent.BaseImpl.EFCore` targets. Build clean; designer smoke-ran
+(ribbon, custom Database tab, Design Analyzer 0 errors); the 26.1 multi-agent AI wizard confirmed
+live (new "Select a Data Source Option" page, AI Prompt-to-Report entry). Note: clarification
+questions only appear during generation when a prompt is ambiguous — not a fixed wizard step.
+
+#### RPT-002: Remove schema-stuffed predefined prompts (ID: 1057)
+
+Completed 2026-07-19, branch `rpt-001-devexpress-26.1`.
+
+- Predefined prompts reduced to three intent-only templates (Order Summary, Product Catalog,
+  Invoice); schema blob and `_schemaPrompt` plumbing deleted. 26.1's wizard attaches data-source
+  metadata to the LLM prompt itself. `ReflectionSchemaDiscoveryService` retained for RPT-004.
+- PromptAugmentation relocation (planned c) was N/A: the property doesn't exist on the WinForms
+  prompt-to-report behavior in 26.1 (prompt-to-expression / WPF only), and the connection is picked
+  in the wizard UI anyway — hint deleted outright.
+- Real bug found + fixed: the wizard's existing-connections list reads only the app config file;
+  the `DefaultConnectionStringProvider` registration (preview-time resolution) never fed it.
+  Fixed with `AppConnectionStorageService : IConnectionStorageService` on the `DesignMdiController`.
+- Infra: `xafaireportdesigner` DB was missing after the repo rename — created + seeded in the
+  `xaf-postgres` container, which itself had to be recreated (same data volume) because its host
+  port publish was silently inactive.
+- User-verified in the running wizard: connection listed, tables show, slim prompts present.
