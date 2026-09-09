@@ -49,14 +49,12 @@ There is no formal test suite.
 
 - **`ReflectionSchemaDiscoveryService`** (Module) — Scans the Module assembly for `[AIVisible]`
   entities; `GenerateDataSourceSchema()` emits factual PostgreSQL schema text (tables, columns,
-  enums, FK graph) for `PromptToReportRequest.DataSourceSchema`. Skips computed get-only
-  properties (no DB column).
+  enums, FK graph) for the AI spec prompt. Skips computed get-only properties (no DB column).
 - **`SchemaSqlDataSourceFactory`** (Module) — Builds the `SqlDataSource` matching the schema
   (query per table + named `MasterDetailInfo` relations in both FK directions, self-FKs skipped);
-  `DescribeDataMembers()` emits the binding rules the AI must follow (absolute relation-name
-  paths, one hop per DetailReportBand); `Attach()` attaches a data source to a generated report
-  (snapshots band DataMembers first — assigning DataSource resets them); `ValidateBindings()`
-  resolves every expression path against the schema/relation graph.
+  `DescribeDataMembers()` emits the expression rules + relation list the AI must follow (band
+  layout is the translator's job, not the model's); `ValidateBindings()` parses every expression
+  (criteria grammar) and resolves every field path against the schema/relation graph.
 - **`ReportSpecTranslator`** (Module) — the own pipeline's deterministic half: spec records +
   `BuildSystemPrompt()` + `ParseSpec()` + `BuildReport()`. Encodes the proven band shapes (ONE
   root-level DetailReportBand with full absolute path and EXPLICIT DataSource; totals as

@@ -92,7 +92,8 @@ The working recipe (all doc-verified/empirically tested):
   ("Invoices.InvoicesOrders.OrdersOrderItems"), expressions reach related rows via relation names.
 - **Gotcha:** assigning `XtraReport.DataSource` resets band DataMembers set without a source —
   `SchemaSqlDataSourceFactory.Attach()` snapshots members, attaches, reassigns (normalizing
-  relative paths to absolute).
+  relative paths to absolute). *(Attach() removed 2026-09-09, RPT-014 — the translator sets the
+  DataSource before any band exists, so the reset never bites; recipe kept here.)*
 - `IAIReportGenerationHost` works: the multi-agent flow asked a real clarification question
   (page size, with choices) and resumed on answer. App has `WinFormsAIReportGenerationHost`
   (dialogs + status label) behind Database → AI → "Generate from Prompt"; the scratch console

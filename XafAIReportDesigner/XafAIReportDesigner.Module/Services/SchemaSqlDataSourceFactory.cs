@@ -56,21 +56,17 @@ namespace XafAIReportDesigner.Module.Services
         }
 
         /// <summary>
-        /// Describes the member tree of the data source built by <see cref="Create"/> —
-        /// appended to the AI schema so generated bindings match by construction.
+        /// Expression rules + the relation list for the data source built by <see cref="Create"/>,
+        /// appended to the AI schema so spec expressions match by construction. Band layout is
+        /// the translator's business, not the model's — no band rules here (RPT-014).
         /// </summary>
         public static string DescribeDataMembers(SchemaInfo schema)
         {
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine("Report binding rules for the attached data source (follow these exactly):");
-            sb.AppendLine("- Set the report's DataMember to the master view name (e.g. \"Invoices\"); the root Detail band repeats once per master row.");
-            sb.AppendLine("- A DetailReportBand's DataMember must be an ABSOLUTE relation path that starts at the report's master view and uses RELATION NAMES, e.g. \"Invoices.InvoicesOrders\" and nested \"Invoices.InvoicesOrders.OrdersOrderItems\".");
-            sb.AppendLine("- Each DetailReportBand may add exactly ONE relation segment beyond its parent's path — to traverse two relations, NEST two DetailReportBands (a single band with a two-hop path only reads the first related row).");
-            sb.AppendLine("- In expressions, reach related rows through relation names: [OrdersCustomers].[CompanyName] returns the order's customer name; Sum([OrdersOrderItems].[Quantity]) aggregates over an order's items.");
-            sb.AppendLine("- Scalar fields of the current row bind directly: a label in a band bound to \"Invoices\" uses plain [InvoiceNumber] or Concat('Date: ', FormatString('{0:d}', [InvoiceDate])). Never leave a label's expression empty ([]).");
-            sb.AppendLine("- Expressions are relative to the band's own row context: in a band whose DataMember ends at Orders, aggregate with Sum([OrdersOrderItems].[Quantity]) — NOT with the full path from the master view ([InvoicesOrders].[...] does not exist on an Orders row).");
+            sb.AppendLine("Expression rules for the attached data source (follow these exactly):");
+            sb.AppendLine("- Reach related rows through relation names: [OrdersCustomers].[CompanyName] returns the order's customer name.");
+            sb.AppendLine("- Expressions are relative to the row they are evaluated on: a masterFields expression sees the master view's columns, a level's columns/headerFields see that level's entity columns. Do not prefix with the path from the master view.");
             sb.AppendLine("- Use ONLY the columns listed above — do not invent fields (no [Description], no [VatRate]). Constants such as a VAT rate are numeric literals in the expression.");
-            sb.AppendLine("- Keep each master row's header, detail table, and totals together so they print on the same page; insert the page break after the master row's totals (e.g. GroupFooter/DetailReportBand PageBreak = AfterBand).");
             sb.AppendLine();
             sb.AppendLine("Relations available (RelationName: meaning):");
             foreach (var fk in ForeignKeys(schema).Where(f => f.OwnerTable != f.TargetTable))
@@ -82,47 +78,12 @@ namespace XafAIReportDesigner.Module.Services
         }
 
         /// <summary>
-        /// Attaches the factory data source to a generated report. Assigning
-        /// XtraReport.DataSource resets band DataMembers that were set without a data
-        /// source present, so the members are snapshotted first and reassigned after —
-        /// normalized to absolute relation paths ("Invoices.InvoicesOrders.OrdersOrderItems")
-        /// because the AI sometimes emits paths relative to the parent band.
-        /// </summary>
-        public static void Attach(XtraReport report, SchemaInfo schema, string connectionName, DataConnectionParametersBase connectionParameters)
-        {
-            var rootMember = report.DataMember;
-            var saved = new List<(DetailReportBand Band, string Member)>();
-            Collect(report.Bands, rootMember, saved);
-
-            report.DataSource = Create(schema, connectionName, connectionParameters);
-            report.DataMember = rootMember;
-            foreach (var (band, member) in saved)
-                band.DataMember = member;
-
-            static void Collect(BandCollection bands, string parentPath, List<(DetailReportBand, string)> saved)
-            {
-                foreach (var band in bands.OfType<DetailReportBand>())
-                {
-                    var member = band.DataMember;
-                    if (!string.IsNullOrEmpty(parentPath) &&
-                        !string.IsNullOrEmpty(member) &&
-                        member != parentPath &&
-                        !member.StartsWith(parentPath + ".", StringComparison.Ordinal))
-                    {
-                        member = parentPath + "." + member;
-                    }
-                    saved.Add((band, member));
-                    Collect(band.Bands, member, saved);
-                }
-            }
-        }
-
-        /// <summary>
         /// Validates every expression binding and DetailReportBand path in a generated
         /// report against the schema + relation graph. Returns human-readable issues —
         /// exactly the failures generation varies on (unresolvable field paths, empty []
-        /// operands, wrong relation names). Feed non-empty results back through a repair
-        /// request (the API accepts an existing report to update).
+        /// operands, wrong relation names, malformed syntax). SpecPipeline rolls again on a
+        /// non-empty result and keeps the best roll — never a repair request against the
+        /// existing report (see CLAUDE.md: repair-style requests mutate and regenerate broadly).
         /// </summary>
         public static IReadOnlyList<string> ValidateBindings(XtraReport report, SchemaInfo schema)
         {

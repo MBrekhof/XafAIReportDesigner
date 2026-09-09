@@ -39,55 +39,9 @@ namespace XafAIReportDesigner.Module.Services
         }
 
         /// <summary>
-        /// Generates a system prompt describing all discovered entities for AI context.
-        /// </summary>
-        public string GenerateSystemPrompt()
-        {
-            var schema = Schema;
-            var sb = new StringBuilder();
-
-            sb.AppendLine("You are a helpful report design assistant for an order management application.");
-            sb.AppendLine("You create reports based on the following data model.");
-            sb.AppendLine();
-            sb.AppendLine("Available entities and their database tables:");
-
-            foreach (var entity in schema.Entities)
-            {
-                var tablePart = !string.IsNullOrEmpty(entity.TableName) ? $" (table: {entity.TableName})" : "";
-                if (!string.IsNullOrEmpty(entity.Description))
-                    sb.AppendLine($"- **{entity.Name}**{tablePart} — {entity.Description}");
-                else
-                    sb.AppendLine($"- **{entity.Name}**{tablePart}");
-
-                // Include properties with types for report design context
-                foreach (var prop in entity.Properties)
-                {
-                    var colPart = prop.ColumnName != prop.Name ? $" (column: {prop.ColumnName})" : "";
-                    var descPart = !string.IsNullOrEmpty(prop.Description) ? $" — {prop.Description}" : "";
-                    sb.AppendLine($"  - {prop.Name}: {prop.TypeName}{colPart}{descPart}");
-                }
-
-                foreach (var rel in entity.Relationships)
-                {
-                    var relType = rel.IsCollection ? $"IList<{rel.TargetEntity}>" : rel.TargetEntity;
-                    sb.AppendLine($"  - {rel.PropertyName}: {relType} (navigation)");
-                }
-            }
-
-            sb.AppendLine();
-            sb.AppendLine("When designing reports:");
-            sb.AppendLine("- Use the entity and property names for data bindings");
-            sb.AppendLine("- Use the table and column names for SQL-based data sources");
-            sb.AppendLine("- Create clear, well-formatted layouts with appropriate grouping and sorting");
-
-            return sb.ToString();
-        }
-
-        /// <summary>
         /// Generates a factual PostgreSQL schema description (tables, columns, foreign keys)
-        /// for the 26.1 <c>PromptToReportRequest.DataSourceSchema</c> parameter. Unlike
-        /// <see cref="GenerateSystemPrompt"/>, this carries no persona or instructions —
-        /// the generation workflow supplies its own. Foreign keys are listed explicitly:
+        /// for the AI spec prompt. It carries no persona or instructions — the
+        /// ReportSpecTranslator prompt supplies those. Foreign keys are listed explicitly:
         /// they are what the AI needs to build correct master-detail queries.
         /// </summary>
         public string GenerateDataSourceSchema()

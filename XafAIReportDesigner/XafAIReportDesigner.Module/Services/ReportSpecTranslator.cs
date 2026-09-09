@@ -309,7 +309,11 @@ Expression rules (DevExpress criteria language):
         /// Deterministic repair: for every field chain that does not resolve from the given
         /// context entity, drop redundant leading segments or BFS the relation graph for the
         /// shortest prefix path that makes it resolve. The LLM supplies intent; this
-        /// guarantees correctness.
+        /// guarantees resolvability.
+        /// ponytail: heuristic with a known ceiling — a chain that doubles back through a
+        /// one-to-many hop inside a scalar expression ([ProductsOrderItems].[ProductsOrderItems]…)
+        /// is ambiguous by construction (DX reads the first related row there anyway); the
+        /// repair picks the shortest resolvable reading and does not try to tell them apart.
         /// </summary>
         private static string RepairChains(string expression, string contextEntity,
             Dictionary<(string, string), string> relations, Dictionary<string, HashSet<string>> columns)

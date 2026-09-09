@@ -401,30 +401,15 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     }
 
     /// <summary>
-    /// Tries to extract a data type name from the report's data source
-    /// so XAF can associate the report with a business object type.
-    /// Returns the SQL data source's first query name or empty string.
+    /// XAF reads <c>ReportDataV2.DataTypeName</c> as a CLR type name (the business object the
+    /// report is "about"). The root DataMember names the master view; map it back to the
+    /// entity's CLR type, or leave the association empty for anything else (RPT-014).
     /// </summary>
-    private static string ExtractDataTypeName(XtraReport report)
+    private string ExtractDataTypeName(XtraReport report)
     {
-        // Check for SqlDataSource — the AI wizard typically creates these.
-        if (report.DataSource is DevExpress.DataAccess.Sql.SqlDataSource sqlDs)
-        {
-            var firstQuery = sqlDs.Queries.OfType<DevExpress.DataAccess.Sql.SelectQuery>().FirstOrDefault();
-            if (firstQuery != null)
-                return firstQuery.Name;
-
-            // Fall back to any query name.
-            var anyQuery = sqlDs.Queries.Cast<DevExpress.DataAccess.Sql.SqlQuery>().FirstOrDefault();
-            if (anyQuery != null)
-                return anyQuery.Name;
-        }
-
-        // Check DataMember as fallback.
-        if (!string.IsNullOrWhiteSpace(report.DataMember))
-            return report.DataMember;
-
-        return "";
+        var root = (report.DataMember ?? "").Split('.')[0];
+        var entity = _schemaService.Schema.Entities.FirstOrDefault(e => e.TableName == root);
+        return entity?.ClrType.FullName ?? "";
     }
 
     /// <summary>
