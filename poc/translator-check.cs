@@ -67,6 +67,18 @@ var noMember = new XtraReport();
 Assert(SchemaSqlDataSourceFactory.ValidateBindings(noMember, schema).Any(i => i.Contains("DataMember is empty")),
     "empty root DataMember is reported", []);
 
+// 5. RPT-015: layout fingerprint survives a save/load round trip and notices a hand edit.
+ReportSpecTranslator.AttachSpec(report, "{}", "p");
+report.DisplayName = "renamed after attach"; // hosts do this; must not count as an edit
+byte[] xml;
+using (var ms = new MemoryStream()) { report.SaveLayoutToXml(ms); xml = ms.ToArray(); }
+var reloaded = new XtraReport();
+using (var ms = new MemoryStream(xml)) reloaded.LoadLayoutFromXml(ms);
+Assert(!ReportSpecTranslator.HasManualEdits(reloaded), "no manual edits after save/load round trip", []);
+reloaded.Bands.OfType<DetailBand>().First().Controls.Add(new XRPictureBox { Name = "logo", WidthF = 50, HeightF = 50 });
+Assert(ReportSpecTranslator.HasManualEdits(reloaded), "added control is detected as a manual edit", []);
+Assert(!ReportSpecTranslator.HasManualEdits(flatReport), "report without fingerprint (pre-RPT-015) reports no edits", []);
+
 Console.WriteLine("translator-check: all assertions passed");
 return 0;
 

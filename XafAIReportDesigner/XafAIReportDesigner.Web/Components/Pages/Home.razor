@@ -92,7 +92,7 @@
             Status = result.Message;
             _issues = result.Issues;
             if (result.Success)
-                Nav.NavigateTo($"/designer?report={Uri.EscapeDataString(reportName)}");
+                Nav.NavigateTo($"/designer?report={Uri.EscapeDataString(result.SavedAs ?? reportName)}");
         }
         catch (Exception ex)
         {

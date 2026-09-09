@@ -148,6 +148,16 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             return;
         }
 
+        // Modify rebuilds from the spec; hand edits made in the designer are not in the spec
+        // (RPT-015). The result opens as a NEW document, so nothing is lost unless the user
+        // saves over the original — but say so before spending the roll.
+        if (ReportSpecTranslator.HasManualEdits(current) && MessageBox.Show(
+                "This report was edited in the designer after it was generated. Modify via AI " +
+                "rebuilds it from the AI spec, so those manual edits will not carry over.\n\n" +
+                "The result opens as a new document; this one stays open. Continue?",
+                "Modify via AI", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            return;
+
         var change = PromptForText("Modify Report via AI",
             "Describe the change (e.g. \"move the quantity column to the first position\"):");
         if (string.IsNullOrWhiteSpace(change)) return;

@@ -9,7 +9,8 @@ using XafAIReportDesigner.Module.Services;
 
 namespace XafAIReportDesigner.Web.Services;
 
-public record AIReportResult(bool Success, string Message, IReadOnlyList<string> Issues);
+/// <summary>SavedAs is the name the layout landed under (differs from the request when Modify preserved an edited report).</summary>
+public record AIReportResult(bool Success, string Message, IReadOnlyList<string> Issues, string? SavedAs = null);
 
 /// <summary>Web front for the own pipeline: generate/modify a report and save it to ReportDataV2.</summary>
 public sealed class AIReportService(
@@ -51,8 +52,24 @@ public sealed class AIReportService(
 
         current.Extensions.TryGetValue(ReportSpecTranslator.PromptExtensionKey, out var originalPrompt);
         var schemaText = SchemaText();
-        return await RunAsync(ReportSpecTranslator.BuildModifySystemPrompt(schemaText, currentSpec), change,
-            (originalPrompt ?? "") + "\n[modified]: " + change, model, reportName, store, createNew: false, setStatus);
+
+        // Modify rebuilds from the spec. If the layout was edited in the designer since, those
+        // edits are not in the spec — keep the edited report and save the result beside it
+        // instead of overwriting (RPT-015).
+        var edited = ReportSpecTranslator.HasManualEdits(current);
+        var targetName = edited ? NextFreeName(store, reportName + " (AI)") : reportName;
+        var result = await RunAsync(ReportSpecTranslator.BuildModifySystemPrompt(schemaText, currentSpec), change,
+            (originalPrompt ?? "") + "\n[modified]: " + change, model, targetName, store, createNew: edited, setStatus);
+        return edited && result.Success
+            ? result with { Message = $"'{reportName}' has manual designer edits and was left untouched — {result.Message}" }
+            : result;
+    }
+
+    private static string NextFreeName(ReportDataV2Store store, string baseName)
+    {
+        var name = baseName;
+        for (int i = 2; store.Exists(name); i++) name = $"{baseName} {i}";
+        return name;
     }
 
     private async Task<AIReportResult> RunAsync(string systemPrompt, string userPrompt, string promptToEmbed,
@@ -84,7 +101,7 @@ public sealed class AIReportService(
         var issues = result.Issues ?? [];
         return new AIReportResult(true,
             issues.Count == 0 ? $"'{reportName}' saved." : $"'{reportName}' saved with {issues.Count} unresolved binding(s).",
-            issues);
+            issues, reportName);
     }
 
     private string SchemaText() =>
