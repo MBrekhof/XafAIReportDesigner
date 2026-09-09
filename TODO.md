@@ -22,4 +22,26 @@ and preserved in project memory.
   (`ReflectionSchemaDiscoveryService`, `SchemaSqlDataSourceFactory` incl. `ValidateBindings`)
   is UI-free and reusable as-is.
 
-(No open items — everything lives in DOCS/DONE.md; the board mints the next card.)
+## P2: Medium
+
+#### RPT-017: Master-only specs render as stacked labels, not a table (ID: 1587)
+
+Seen 2026-09-09 during the RPT-010 smoke test: "A list of customers with company name, city
+and country, one row per customer" produces a spec with `masterView: Customers`, four
+`masterFields` and no `levels`. `ReportSpecTranslator.BuildReport` puts masterFields as one
+label per line in the root Detail band (the shape meant for an invoice header), so the
+report reads as a stacked block per customer instead of a table with a header row. The
+translator only builds an `XRTable` for the innermost level.
+
+Fix (translator only, no prompt change):
+- `Levels` empty and `pagePerMasterRow` false → render masterFields as columns: header row
+  with the labels, root Detail band with one `XRTable` row of the expressions (reuse
+  `BuildRow`, `FieldSpec` → `ColumnSpec`, `Label ?? expression` as header, right-align
+  numeric/currency formats). `pagePerMasterRow` true keeps the stacked "one page per record"
+  shape.
+- Totals with no levels currently attach to nothing (`lastBand == null`) — put them in a
+  ReportFooter for the table shape.
+- `poc/translator-check.cs`: a flat spec yields an XRTable with N cells in Detail; a
+  pagePerMasterRow spec keeps stacked labels.
+
+Ceiling: a flat list wider than ~8 columns gets cramped at 650pt — same as the level table.
