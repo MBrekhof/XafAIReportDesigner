@@ -93,7 +93,7 @@
         await SetRunning(true);
         _started = DateTime.UtcNow;
         // Tick on the threadpool, mutate + render on the renderer's sync context.
-        _timer = new System.Threading.Timer(_ => { if (!_disposed) _ = InvokeAsync(() => { _elapsed = DateTime.UtcNow - _started; StateHasChanged(); }); }, null, 1000, 1000);
+        _timer = new System.Threading.Timer(_ => { if (!_disposed) _ = InvokeAsync(() => { if (_disposed) return; _elapsed = DateTime.UtcNow - _started; StateHasChanged(); }); }, null, 1000, 1000);
         try
         {
             var result = IsModify
@@ -117,6 +117,7 @@
         if (_disposed) return;
         _ = InvokeAsync(() =>
         {
+            if (_disposed) return;
             if (status.Contains(" failed: ")) _failures.Add(status); else _status = status;
             StateHasChanged();
         });

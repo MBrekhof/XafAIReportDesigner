@@ -1,5 +1,25 @@
 # Done
 
+#### RPT-010: Web UI refinement (ID: 1063)
+
+Completed 2026-09-09 (branch `rpt-010-web-ui`, commits 322a97f, 268eb53; concept
+`DOCS/RPT-010-concept.md`, four Codex design rounds + two code rounds). Owner decisions:
+DevExpress.Blazor components, model dropdown in the top bar, Modify from the home page only.
+Home = `DxGrid` of reports (search box) with an `AI` badge filled by a background pass over
+the layouts and a lock for predefined rows; Open / Modify (AI rows only) / Delete (`DxPopup`
+confirm). `AiRunPanel` = Generate-or-Modify form → `DxLoadingPanel` + status line + elapsed
+timer + failed-attempt lines → result panel that stays on screen with the binding warnings
+and an explicit *Open in designer* (fixes Codex Web#5). Designer page: slim bar (back link +
+name), `/designer` without a report redirects home, unknown report shows an error. Store:
+`List`, `Delete` (guard in the statement), `SaveIfUnchanged` (atomic compare-and-save);
+designer Save As is create-only. Modify never overwrites an edited or concurrently saved
+layout: the result lands as `<name> (AI)` with a message saying why. Out on purpose:
+in-designer Modify (unsaved designer edits are invisible to the fingerprint), Cancel
+(LlmTornado 1.1.64 ignores the token), thumbnails, "edited" badge. Verified in the browser
+with a live key: Generate → result → Close refreshes with badge; Modify in place; Modify on
+an edited layout → "(AI)" copy, Open lands on it; guards, delete, redirect, not-found.
+`poc/store-check.cs` proves `SaveIfUnchanged` with stale bytes writes nothing.
+
 #### RPT-011: Report persistence — name-as-identity overwrites and Save-as bug (ID: 1581)
 
 Completed 2026-09-09 (branch `rpt-011-012-codex-fixes`, commits 84d2c53, 2b61f1e, a12c812).

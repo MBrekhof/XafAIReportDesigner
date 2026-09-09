@@ -40,5 +40,5 @@ static bool Throws(Action a) { try { a(); return false; } catch { return true; }
 static void Assert(bool ok, string what)
 {
     Console.WriteLine($"  {(ok ? "ok  " : "FAIL")} {what}");
-    if (!ok) Environment.Exit(1);
+    if (!ok) throw new Exception("store-check failed: " + what); // throw, so the finally still deletes the row
 }

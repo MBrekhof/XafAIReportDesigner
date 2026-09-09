@@ -1,6 +1,6 @@
 # RPT-010 concept — Web UI refinement (home page + designer chrome)
 
-Status: CONCEPT v5, 2026-09-09 — APPROVED by the owner with three answers (below), implementation started on branch `rpt-010-web-ui`. Card: RPT-010 (ID 1063), deferred by the
+Status: IMPLEMENTED 2026-09-09 on branch `rpt-010-web-ui` (commits 322a97f, 268eb53), Codex-reviewed. Kept as the design record; deviations from the text are listed under "As built". Card: RPT-010 (ID 1063), deferred by the
 user on 2026-07-19 ("works, ui needs some refinement, not now"). v1 was reviewed by Codex the
 same day; v2 folds in that review (see "Review history" at the end). This is the design to
 approve before any code is written.
@@ -195,9 +195,9 @@ After success the page does **not** navigate:
   `ListNames`); New/Modify/Delete disabled until it succeeds.
 - A run that throws: the error line inside the progress panel, form contents kept.
 - Circuit lost: Blazor's default reconnect overlay. If the circuit survives, the run
-  resumes and its result panel appears; if the circuit is gone, the outcome of a run that was
-  in flight is unknown to the new page — the banner says "check the list before retrying"
-  and the list is reloaded. No server-side job tracking (single user, ~15 s runs).
+  resumes and its result panel appears; if the circuit is gone, the page reloads and the list
+  is re-read — a run that was in flight either saved (its row is in the list) or did not. No
+  banner, no server-side job tracking (single user, ~15 s runs). *(As built: no banner.)*
 
 ### `<dialog>` usage
 
@@ -299,6 +299,18 @@ in the same band with the risk removed.
 2. **Model dropdown in the top bar.**
 3. **Modify only from the home page is acceptable.**
 
+## As built (deviations from the text above)
+
+- List is a `DxGrid` with the search box, not cards; actions are buttons in a template column.
+- The Modify panel renders above the grid (same place as the New panel), not under the card.
+- The New panel stays mounted but hidden after Close, so its text survives; a Modify panel
+  is keyed by report name and discarded on Close.
+- No "check the list" banner after a lost circuit (see Error states).
+- `poc/store-check.cs` (DB-backed) covers Insert/SaveIfUnchanged/Delete; `translator-check`
+  stays DB-free.
+- Cosmetic: the designer page still shows a page scrollbar on some viewports (DX designer's
+  own layout height); not chased.
+
 ## Review history
 
 - v1 (2026-09-09) → Codex design review: factual corrections (non-modal `<dialog>`,
@@ -317,3 +329,7 @@ in the same band with the risk removed.
   them. Proposed a conditional `UPDATE … WHERE Content=@original`.
 - v4: adopted verbatim as `SaveIfUnchanged`. Ready to implement once the owner answers the
   three open questions.
+- v5: owner answers recorded (DevExpress.Blazor, model in top bar, home-only Modify).
+- Implementation 322a97f → Codex: no overwrite defect; Medium: Close lost typed input,
+  badge pass outlived the page, timer mutation off the sync context; store check missing.
+  268eb53 fixes all four.
