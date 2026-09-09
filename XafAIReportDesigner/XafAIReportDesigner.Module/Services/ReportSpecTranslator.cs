@@ -89,9 +89,12 @@ Expression rules (DevExpress criteria language):
             report.Extensions.TryGetValue(FingerprintExtensionKey, out var saved) &&
             !string.IsNullOrEmpty(saved) && saved != LayoutFingerprint(report);
 
-        // ponytail: structural digest (control tree, bounds, text, bindings, filter), not the
-        // XML — the designer re-serializes layouts with cosmetic differences, and DisplayName
-        // is set by the hosts after AttachSpec. Font/color-only edits are not detected.
+        // ponytail: structural digest (control tree, bounds, text, bindings, data members and
+        // filters), not the XML — the designer re-serializes layouts with cosmetic differences,
+        // and DisplayName is set by the hosts after AttachSpec. Control NAMES are deliberately
+        // excluded: the translator leaves them empty and the web designer assigns them on load,
+        // so an untouched save would otherwise read as edited. Font/color-only edits are not
+        // detected.
         private static string LayoutFingerprint(XtraReport report)
         {
             var sb = new System.Text.StringBuilder();
@@ -99,9 +102,11 @@ Expression rules (DevExpress criteria language):
             foreach (var control in report.AllControls<XRControl>())
             {
                 var b = control.BoundsF;
-                sb.Append(control.GetType().Name).Append(':').Append(control.Name).Append(':')
+                sb.Append(control.GetType().Name).Append(':')
                   .Append(FormattableString.Invariant($"{b.X},{b.Y},{b.Width},{b.Height}"))
                   .Append(':').Append(control.Text).Append(':');
+                if (control is DetailReportBand band)
+                    sb.Append(band.DataMember).Append(':').Append(band.FilterString).Append(':');
                 foreach (ExpressionBinding binding in control.ExpressionBindings)
                     sb.Append(binding.PropertyName).Append('=').Append(binding.Expression).Append(';');
                 sb.Append('|');

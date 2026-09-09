@@ -80,6 +80,15 @@ using (var ms = new MemoryStream()) { report.SaveLayoutToXml(ms); xml = ms.ToArr
 var reloaded = new XtraReport();
 using (var ms = new MemoryStream(xml)) reloaded.LoadLayoutFromXml(ms);
 Assert(!ReportSpecTranslator.HasManualEdits(reloaded), "no manual edits after save/load round trip", []);
+// The web designer names unnamed controls on load ("label1"…) and saves them back — not an edit.
+int n = 0;
+foreach (var c in reloaded.AllControls<XRControl>()) if (string.IsNullOrEmpty(c.Name)) c.Name = "auto" + (++n);
+Assert(n > 0 && !ReportSpecTranslator.HasManualEdits(reloaded), "designer-assigned control names are not an edit", []);
+var deepBand = reloaded.Bands.OfType<DetailReportBand>().Single();
+deepBand.FilterString = "[Quantity] > 1";
+Assert(ReportSpecTranslator.HasManualEdits(reloaded), "detail band filter change is detected", []);
+deepBand.FilterString = "";
+Assert(!ReportSpecTranslator.HasManualEdits(reloaded), "reverting the filter clears the edit", []);
 reloaded.Bands.OfType<DetailBand>().First().Controls.Add(new XRPictureBox { Name = "logo", WidthF = 50, HeightF = 50 });
 Assert(ReportSpecTranslator.HasManualEdits(reloaded), "added control is detected as a manual edit", []);
 Assert(!ReportSpecTranslator.HasManualEdits(flatReport), "report without fingerprint (pre-RPT-015) reports no edits", []);

@@ -67,8 +67,11 @@ public sealed class AIReportService(
 
     private static string NextFreeName(ReportDataV2Store store, string baseName)
     {
-        var name = baseName;
-        for (int i = 2; store.Exists(name); i++) name = $"{baseName} {i}";
+        // Keep the suffixed name inside the 256-char DisplayName limit.
+        const int MaxLength = 256, SuffixRoom = 6; // " 9999"
+        var stem = baseName.Length > MaxLength - SuffixRoom ? baseName[..(MaxLength - SuffixRoom)] : baseName;
+        var name = stem;
+        for (int i = 2; store.Exists(name); i++) name = $"{stem} {i}";
         return name;
     }
 
