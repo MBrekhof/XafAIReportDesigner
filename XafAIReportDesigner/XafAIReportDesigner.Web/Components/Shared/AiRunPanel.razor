@@ -27,7 +27,7 @@
         @if (Running)
         {
             <div class="progress" style="margin-top:10px">
-                <span id="status">@_status</span>
+                <span id="@(IsModify ? "modify-status" : "status")">@_status</span>
                 <span class="elapsed">@_elapsed.ToString(@"mm\:ss")</span>
             </div>
             @if (_failures.Count > 0)
@@ -39,12 +39,12 @@
         }
         else if (!string.IsNullOrEmpty(_error))
         {
-            <p class="status error" id="status">@_error</p>
+            <p class="status error" id="@(IsModify ? "modify-status" : "status")">@_error</p>
         }
     }
     else
     {
-        <h3 class="@(_result.Success ? "ok" : "error")" id="status">@_result.Message</h3>
+        <h3 class="@(_result.Success ? "ok" : "error")" id="@(IsModify ? "modify-status" : "status")">@_result.Message</h3>
         @if (_result.Issues.Count > 0)
         {
             <p class="issues" style="padding-left:0">⚠ @_result.Issues.Count unresolved binding(s) — fix them in the designer:</p>
@@ -92,7 +92,8 @@
         _error = null; _failures.Clear(); _status = "Starting…"; _elapsed = TimeSpan.Zero;
         await SetRunning(true);
         _started = DateTime.UtcNow;
-        _timer = new System.Threading.Timer(_ => { _elapsed = DateTime.UtcNow - _started; _ = InvokeAsync(StateHasChanged); }, null, 1000, 1000);
+        // Tick on the threadpool, mutate + render on the renderer's sync context.
+        _timer = new System.Threading.Timer(_ => { if (!_disposed) _ = InvokeAsync(() => { _elapsed = DateTime.UtcNow - _started; StateHasChanged(); }); }, null, 1000, 1000);
         try
         {
             var result = IsModify
@@ -113,17 +114,28 @@
 
     void SetStatus(string status)
     {
-        if (status.Contains(" failed: ")) _failures.Add(status); else _status = status;
-        _ = InvokeAsync(StateHasChanged);
+        if (_disposed) return;
+        _ = InvokeAsync(() =>
+        {
+            if (status.Contains(" failed: ")) _failures.Add(status); else _status = status;
+            StateHasChanged();
+        });
     }
 
     async Task SetRunning(bool value)
     {
         Running = value;
-        await RunningChanged.InvokeAsync(value);
+        if (!_disposed) await RunningChanged.InvokeAsync(value);
     }
 
-    Task Close() => OnClosed.InvokeAsync(_result?.Success == true);
+    // Close keeps the typed text (the host may keep this panel mounted); only the result goes.
+    Task Close()
+    {
+        var refresh = _result?.Success == true;
+        _result = null;
+        return OnClosed.InvokeAsync(refresh);
+    }
 
-    public void Dispose() => _timer?.Dispose();
+    bool _disposed;
+    public void Dispose() { _disposed = true; _timer?.Dispose(); }
 }

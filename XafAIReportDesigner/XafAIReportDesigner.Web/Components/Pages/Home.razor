@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @inject ReportDataV2Store Store
 @inject NavigationManager Nav
+@implements IDisposable
 @using DevExpress.XtraReports.UI
 @using XafAIReportDesigner.Web.Components.Shared
 
@@ -21,11 +22,11 @@
                   Enabled="@(!Busy && _dbError == null && !_showNew)" Click="@(() => { _modifyName = null; _showNew = true; })" />
     </div>
 
-    @if (_showNew)
-    {
+    @* The New panel stays mounted (hidden) so prompt and name survive Close/reopen. *@
+    <div hidden="@(!_showNew)">
         <AiRunPanel Locked="@Busy" RunningChanged="@OnRunningChanged" OnClosed="@(refresh => ClosePanel(refresh))" />
-    }
-    else if (_modifyName != null)
+    </div>
+    @if (!_showNew && _modifyName != null)
     {
         @* @key: picking another report must give a fresh panel, not re-parameterise the old one *@
         <AiRunPanel @key="@_modifyName" ReportName="@_modifyName" Locked="@Busy" RunningChanged="@OnRunningChanged" OnClosed="@(refresh => ClosePanel(refresh))" />
@@ -101,6 +102,7 @@
     void Reload()
     {
         _dbError = null;
+        _loadGeneration++; // invalidates any badge pass still running, success or not
         try
         {
             _rows = Store.List().Select(r => new ReportRow { Name = r.Name, IsPredefined = r.IsPredefined }).ToList();
@@ -111,7 +113,7 @@
             _dbError = ex.Message;
             return;
         }
-        _ = FillBadgesAsync(++_loadGeneration);
+        _ = FillBadgesAsync(_loadGeneration);
     }
 
     // Names render immediately; the badge needs the layout, so it arrives afterwards (RPT-010).
@@ -151,6 +153,8 @@
         _modifyName = null;
         if (refresh) Reload();
     }
+
+    public void Dispose() => _loadGeneration++; // stop the badge pass once the page is gone
 
     void ConfirmDelete()
     {
