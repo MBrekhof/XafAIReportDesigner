@@ -1,30 +1,26 @@
 @page "/designer"
 @rendermode InteractiveServer
 @inject ReportDataV2Store Store
+@inject NavigationManager Nav
 
 @if (string.IsNullOrEmpty(Report))
 {
+    @* No report named: nothing to design, back to the list (history replaced so Back works). *@
+}
+else if (_error != null)
+{
+    <div class="designer-bar"><a href="/">← Reports</a></div>
     <div class="content">
-        <h1>Report Designer</h1>
-        @if (_error != null)
-        {
-            <p class="status">Database unavailable: @_error</p>
-        }
-        else
-        {
-            <p>Pick a report:</p>
-            <ul>
-                @foreach (var name in _reports)
-                {
-                    <li><a href="/designer?report=@Uri.EscapeDataString(name)">@name</a></li>
-                }
-            </ul>
-        }
+        <p class="error" id="designer-error">@_error</p>
     </div>
 }
 else
 {
-    <DxReportDesigner ReportName="@Report" Height="calc(100vh - 46px)" Width="100%" AllowMDI="false">
+    <div class="designer-bar">
+        <a href="/">← Reports</a>
+        <span class="name" id="designer-name">@Report</span>
+    </div>
+    <DxReportDesigner ReportName="@Report" Height="calc(100vh - 81px)" Width="100%" AllowMDI="false">
     </DxReportDesigner>
 }
 
@@ -33,13 +29,23 @@ else
     [SupplyParameterFromQuery(Name = "report")]
     public string? Report { get; set; }
 
-    IReadOnlyList<string> _reports = [];
     string? _error;
 
-    protected override void OnInitialized()
+    protected override void OnParametersSet()
     {
-        if (!string.IsNullOrEmpty(Report)) return;
-        try { _reports = Store.ListNames(); }
-        catch (Exception ex) { _error = ex.Message; }
+        _error = null;
+        if (string.IsNullOrEmpty(Report))
+        {
+            Nav.NavigateTo("/", replace: true);
+            return;
+        }
+        try
+        {
+            if (!Store.Exists(Report)) _error = $"Report '{Report}' does not exist.";
+        }
+        catch (Exception ex)
+        {
+            _error = "Database unavailable: " + ex.Message;
+        }
     }
 }

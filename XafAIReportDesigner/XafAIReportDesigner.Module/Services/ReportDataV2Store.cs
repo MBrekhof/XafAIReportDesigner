@@ -17,13 +17,49 @@ namespace XafAIReportDesigner.Module.Services
 
         public IReadOnlyList<string> ListNames()
         {
+            var names = new List<string>();
+            foreach (var (name, _) in List()) names.Add(name);
+            return names;
+        }
+
+        /// <summary>Names plus the predefined flag, one query, no blobs (RPT-010 list).</summary>
+        public IReadOnlyList<(string Name, bool IsPredefined)> List()
+        {
             using var conn = Open();
             using var cmd = new NpgsqlCommand(
-                "SELECT \"DisplayName\" FROM \"ReportDataV2\" WHERE \"DisplayName\" IS NOT NULL ORDER BY \"DisplayName\"", conn);
+                "SELECT \"DisplayName\", \"IsPredefined\" FROM \"ReportDataV2\" WHERE \"DisplayName\" IS NOT NULL ORDER BY \"DisplayName\"", conn);
             using var reader = cmd.ExecuteReader();
-            var names = new List<string>();
-            while (reader.Read()) names.Add(reader.GetString(0));
-            return names;
+            var rows = new List<(string, bool)>();
+            while (reader.Read()) rows.Add((reader.GetString(0), reader.GetBoolean(1)));
+            return rows;
+        }
+
+        /// <summary>Predefined rows are XAF's; the guard is in the statement. Returns false when nothing was deleted.</summary>
+        public bool Delete(string name)
+        {
+            using var conn = Open();
+            using var cmd = new NpgsqlCommand(
+                "DELETE FROM \"ReportDataV2\" WHERE \"DisplayName\" = @name AND NOT \"IsPredefined\"", conn);
+            cmd.Parameters.AddWithValue("name", name);
+            return cmd.ExecuteNonQuery() > 0;
+        }
+
+        /// <summary>
+        /// Atomic compare-and-save (RPT-010): writes only if the stored layout is still exactly
+        /// <paramref name="expected"/>. False means someone saved in between (designer, WinForms,
+        /// another tab) — the caller keeps their work and saves elsewhere.
+        /// </summary>
+        public bool SaveIfUnchanged(string name, byte[] layout, byte[] expected)
+        {
+            Validate(name);
+            using var conn = Open();
+            using var cmd = new NpgsqlCommand(
+                "UPDATE \"ReportDataV2\" SET \"Content\" = @content WHERE \"DisplayName\" = @name " +
+                "AND \"Content\" = @expected AND NOT \"IsPredefined\"", conn);
+            cmd.Parameters.AddWithValue("name", name);
+            cmd.Parameters.AddWithValue("content", layout);
+            cmd.Parameters.AddWithValue("expected", expected);
+            return cmd.ExecuteNonQuery() > 0;
         }
 
         public bool Exists(string name) => Find(name).Exists;

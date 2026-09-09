@@ -1,3 +1,4 @@
+using DevExpress.Blazor;
 using DevExpress.Blazor.Reporting;
 using DevExpress.DataAccess;
 using DevExpress.XtraReports.Web.Extensions;
@@ -15,6 +16,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddMvc();
+builder.Services.AddDevExpressBlazor();
 builder.Services.AddDevExpressBlazorReporting();
 // Must be registered AFTER AddDevExpressBlazorReporting (DX docs).
 builder.Services.AddScoped<ReportStorageWebExtension, ReportDataV2Storage>();
@@ -40,6 +42,7 @@ builder.Services.AddSingleton(sp => new AIReportService(
         "OpenAI:ApiKey is not configured (appsettings.Development.json)."),
     builder.Configuration["OpenAI:GenerateModel"] ?? "gpt-5.4-mini"));
 builder.Services.AddSingleton(sp => new ReportDataV2Store(connectionString));
+builder.Services.AddScoped<UiState>(); // per-circuit: the model picked in the top bar
 
 var app = builder.Build();
 

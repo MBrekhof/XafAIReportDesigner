@@ -32,8 +32,8 @@ public sealed class AIReportService(
             return new AIReportResult(false, $"A report named '{reportName}' already exists — pick another name or use Modify.", []);
 
         var schemaText = SchemaText();
-        return await RunAsync(ReportSpecTranslator.BuildSystemPrompt(schemaText), prompt, prompt,
-            model, reportName, store, createNew: true, setStatus);
+        return await RunAsync(ReportSpecTranslator.BuildSystemPrompt(schemaText), prompt, prompt, model,
+            report => Persist(store, report, reportName, insert: true), setStatus);
     }
 
     public async Task<AIReportResult> ModifyAsync(string reportName, string change, string model,
@@ -53,31 +53,28 @@ public sealed class AIReportService(
         current.Extensions.TryGetValue(ReportSpecTranslator.PromptExtensionKey, out var originalPrompt);
         var schemaText = SchemaText();
 
-        // Modify rebuilds from the spec. If the layout was edited in the designer since, those
-        // edits are not in the spec — keep the edited report and save the result beside it
-        // instead of overwriting (RPT-015).
+        // Modify rebuilds from the spec. Manual designer edits are not in the spec (RPT-015):
+        // an edited report is left untouched and the result saved beside it. The overwrite
+        // itself is a compare-and-save against the bytes loaded above (RPT-010): if anything
+        // saved the report while the model was working, the result goes beside it too.
         var edited = ReportSpecTranslator.HasManualEdits(current);
-        var targetName = edited ? NextFreeName(store, reportName, " (AI)") : reportName;
+        string? note = null;
         var result = await RunAsync(ReportSpecTranslator.BuildModifySystemPrompt(schemaText, currentSpec), change,
-            (originalPrompt ?? "") + "\n[modified]: " + change, model, targetName, store, createNew: edited, setStatus);
-        return edited && result.Success
-            ? result with { Message = $"'{reportName}' has manual designer edits and was left untouched — {result.Message}" }
-            : result;
-    }
-
-    private static string NextFreeName(ReportDataV2Store store, string sourceName, string marker)
-    {
-        // Truncate the SOURCE so the marker and a counter always fit the 256-char DisplayName.
-        const int MaxLength = 256, CounterRoom = 8;
-        var room = MaxLength - marker.Length - CounterRoom;
-        var stem = (sourceName.Length > room ? sourceName[..room] : sourceName) + marker;
-        var name = stem;
-        for (int i = 2; store.Exists(name); i++) name = $"{stem} {i}";
-        return name;
+            (originalPrompt ?? "") + "\n[modified]: " + change, model, report =>
+            {
+                if (!edited && store.SaveIfUnchanged(reportName, Serialize(report, reportName), layout))
+                    return reportName;
+                var copy = NextFreeName(store, reportName, " (AI)");
+                note = edited
+                    ? $"'{reportName}' has manual designer edits and was left untouched — the result is saved as '{copy}'."
+                    : $"'{reportName}' was saved by someone else while the AI was working and was left untouched — the result is saved as '{copy}'.";
+                return Persist(store, report, copy, insert: true);
+            }, setStatus);
+        return note != null && result.Success ? result with { Message = note } : result;
     }
 
     private async Task<AIReportResult> RunAsync(string systemPrompt, string userPrompt, string promptToEmbed,
-        string model, string reportName, ReportDataV2Store store, bool createNew, Action<string>? setStatus)
+        string model, Func<XtraReport, string> persist, Action<string>? setStatus)
     {
         var api = new TornadoApi(new List<ProviderAuthentication>
         {
@@ -94,18 +91,38 @@ public sealed class AIReportService(
             return new AIReportResult(false, $"{model} did not return a valid report spec after 3 attempts.", result.Issues ?? []);
 
         using var report = result.Report; // only the serialized layout outlives this call
-        report.DisplayName = reportName;
-        using var stream = new MemoryStream();
-        report.SaveLayoutToXml(stream);
-        // Generate inserts (unique index turns a lost race into an error, never an overwrite);
-        // Modify updates in place.
-        if (createNew) store.Insert(reportName, stream.ToArray());
-        else store.Save(reportName, stream.ToArray());
+        var savedAs = persist(report);
 
         var issues = result.Issues ?? [];
         return new AIReportResult(true,
-            issues.Count == 0 ? $"'{reportName}' saved." : $"'{reportName}' saved with {issues.Count} unresolved binding(s).",
-            issues, reportName);
+            issues.Count == 0 ? $"'{savedAs}' saved." : $"'{savedAs}' saved with {issues.Count} unresolved binding(s).",
+            issues, savedAs);
+    }
+
+    private static string Persist(ReportDataV2Store store, XtraReport report, string name, bool insert)
+    {
+        var bytes = Serialize(report, name);
+        if (insert) store.Insert(name, bytes); else store.Save(name, bytes);
+        return name;
+    }
+
+    private static byte[] Serialize(XtraReport report, string name)
+    {
+        report.DisplayName = name; // the layout carries its own name (RPT-011)
+        using var stream = new MemoryStream();
+        report.SaveLayoutToXml(stream);
+        return stream.ToArray();
+    }
+
+    private static string NextFreeName(ReportDataV2Store store, string sourceName, string marker)
+    {
+        // Truncate the SOURCE so the marker and a counter always fit the 256-char DisplayName.
+        const int MaxLength = 256, CounterRoom = 8;
+        var room = MaxLength - marker.Length - CounterRoom;
+        var stem = (sourceName.Length > room ? sourceName[..room] : sourceName) + marker;
+        var name = stem;
+        for (int i = 2; store.Exists(name); i++) name = $"{stem} {i}";
+        return name;
     }
 
     private string SchemaText() =>
