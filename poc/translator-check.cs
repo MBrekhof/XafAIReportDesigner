@@ -60,6 +60,11 @@ var partial = ReportSpecTranslator.ParseSpec("""{"masterView":"Customers"}""");
 Assert(partial is { MasterFields.Count: 0, Levels.Count: 0, Totals.Count: 0 }, "ParseSpec fills missing collections", []);
 var partialReport = ReportSpecTranslator.BuildReport(partial!, schema, "X", conn);
 Assert(SchemaSqlDataSourceFactory.ValidateBindings(partialReport, schema).Count == 0, "partial spec still builds", []);
+Assert(ReportSpecTranslator.ParseSpec("""{"masterView":"Customers","masterFields":[{"label":"Customer"}]}""") == null,
+    "ParseSpec fails the roll on an entry without an expression (not silently dropped)", []);
+var bare = new ReportSpec("Bare", "Customers", false, [new FieldSpec("Nope + 1", null, null)], [], []);
+var bareIssues = SchemaSqlDataSourceFactory.ValidateBindings(ReportSpecTranslator.BuildReport(bare, schema, "X", conn), schema);
+Assert(bareIssues.Any(i => i.Contains("'Nope' is not a column")), "unbracketed unknown field is caught via the parsed form", bareIssues);
 var broken = new ReportSpec("Broken", "Customers", false, [new FieldSpec("[CompanyName] +", null, null)], [], []);
 var brokenIssues = SchemaSqlDataSourceFactory.ValidateBindings(ReportSpecTranslator.BuildReport(broken, schema, "X", conn), schema);
 Assert(brokenIssues.Any(i => i.Contains("does not parse")), "malformed expression is reported", brokenIssues);

@@ -125,7 +125,12 @@ namespace XafAIReportDesigner.Module.Services
 
             void ValidateExpression(string expression, string controlName, string bandName, string contextEntity)
             {
-                if (string.IsNullOrWhiteSpace(expression) || contextEntity == null) return;
+                if (contextEntity == null) return;
+                if (string.IsNullOrWhiteSpace(expression))
+                {
+                    issues.Add($"Control '{controlName}' (band '{bandName}'): expression is empty — bind it to a real field.");
+                    return;
+                }
                 if (expression.Contains("[]"))
                 {
                     issues.Add($"Control '{controlName}' (band '{bandName}'): expression contains an empty operand [] — bind it to a real field.");
@@ -133,14 +138,17 @@ namespace XafAIReportDesigner.Module.Services
                 }
                 // Syntax gate: the report evaluates expressions with the criteria-language parser,
                 // so a chain walk alone would pass "[Quantity] +" with zero issues (RPT-013).
-                try { DevExpress.Data.Filtering.CriteriaOperator.Parse(expression); }
+                // The parsed form also normalizes bare identifiers (Quantity + 1 → [Quantity] + 1),
+                // so the field walk below sees every operand, bracketed or not.
+                string normalized;
+                try { normalized = DevExpress.Data.Filtering.CriteriaOperator.Parse(expression).ToString(); }
                 catch (DevExpress.Data.Filtering.Exceptions.CriteriaParserException ex)
                 {
                     issues.Add($"Control '{controlName}' (band '{bandName}'): expression does not parse — {ex.Message}");
                     return;
                 }
 
-                foreach (var chain in ExtractFieldChains(expression))
+                foreach (var chain in ExtractFieldChains(normalized))
                 {
                     var entity = contextEntity;
                     for (int i = 0; i < chain.Count; i++)
@@ -214,18 +222,19 @@ namespace XafAIReportDesigner.Module.Services
         }
 
         /// <summary>
-        /// Extracts bracketed field chains ("[OrdersCustomers].[CompanyName]" → two segments)
-        /// from a criteria expression. Report parameters (?name) are not bracketed and are ignored.
+        /// Extracts field chains from a parser-normalized expression: "[OrdersCustomers].[CompanyName]"
+        /// and the parser's own "[OrdersCustomers.CompanyName]" both yield two segments.
+        /// Report parameters (?name) are not bracketed and are ignored.
         /// </summary>
         private static IEnumerable<List<string>> ExtractFieldChains(string expression)
         {
             var matches = System.Text.RegularExpressions.Regex.Matches(expression,
-                @"\[([A-Za-z_][A-Za-z0-9_]*)\](?:\s*\.\s*\[([A-Za-z_][A-Za-z0-9_]*)\])*");
+                @"\[([A-Za-z_][A-Za-z0-9_.]*)\](?:\s*\.\s*\[([A-Za-z_][A-Za-z0-9_.]*)\])*");
             foreach (System.Text.RegularExpressions.Match m in matches)
             {
-                var chain = new List<string> { m.Groups[1].Value };
+                var chain = new List<string>(m.Groups[1].Value.Split('.'));
                 foreach (System.Text.RegularExpressions.Capture c in m.Groups[2].Captures)
-                    chain.Add(c.Value);
+                    chain.AddRange(c.Value.Split('.'));
                 yield return chain;
             }
         }

@@ -136,19 +136,28 @@ Expression rules (DevExpress criteria language):
                 return null;
             }
             if (spec == null || string.IsNullOrWhiteSpace(spec.MasterView)) return null;
+            // A missing collection is fine (empty); a supplied entry without its expression /
+            // relation is malformed and fails the roll, so the retry feedback fires instead of
+            // the entry silently vanishing from the report.
+            var masterFields = spec.MasterFields ?? [];
+            var levels = spec.Levels ?? [];
+            var totals = spec.Totals ?? [];
+            if (masterFields.Any(f => string.IsNullOrWhiteSpace(f?.Expression)) ||
+                totals.Any(t => string.IsNullOrWhiteSpace(t?.Expression)) ||
+                levels.Any(l => string.IsNullOrWhiteSpace(l?.Relation) ||
+                    (l.HeaderFields ?? []).Any(f => string.IsNullOrWhiteSpace(f?.Expression)) ||
+                    (l.Columns ?? []).Any(c => string.IsNullOrWhiteSpace(c?.Expression))))
+                return null;
             return spec with
             {
                 Title = spec.Title ?? "",
-                MasterFields = (spec.MasterFields ?? []).Where(f => f?.Expression != null).ToList(),
-                Levels = (spec.Levels ?? []).Where(l => l?.Relation != null)
-                    .Select(l => l with
-                    {
-                        HeaderFields = (l.HeaderFields ?? []).Where(f => f?.Expression != null).ToList(),
-                        Columns = (l.Columns ?? []).Where(c => c?.Expression != null)
-                            .Select(c => c with { Header = c.Header ?? "" }).ToList(),
-                    }).ToList(),
-                Totals = (spec.Totals ?? []).Where(t => t?.Expression != null)
-                    .Select(t => t with { Label = t.Label ?? "" }).ToList(),
+                MasterFields = masterFields,
+                Levels = levels.Select(l => l with
+                {
+                    HeaderFields = l.HeaderFields ?? [],
+                    Columns = (l.Columns ?? []).Select(c => c with { Header = c.Header ?? "" }).ToList(),
+                }).ToList(),
+                Totals = totals.Select(t => t with { Label = t.Label ?? "" }).ToList(),
             };
         }
 

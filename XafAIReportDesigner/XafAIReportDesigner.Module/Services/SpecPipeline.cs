@@ -28,6 +28,7 @@ namespace XafAIReportDesigner.Module.Services
             {
                 // One bad roll (provider hiccup, translator throwing on an odd spec) must not
                 // discard a good roll already in hand — it counts as a failed attempt (RPT-013).
+                XtraReport? report = null;
                 try
                 {
                     setStatus?.Invoke($"Attempt {attempt}: requesting report spec…");
@@ -42,7 +43,7 @@ namespace XafAIReportDesigner.Module.Services
                     if (spec == null) { parseFailed = true; continue; }
 
                     setStatus?.Invoke($"Attempt {attempt}: translating spec…");
-                    var report = ReportSpecTranslator.BuildReport(spec, schema, connectionName, connectionParameters);
+                    report = ReportSpecTranslator.BuildReport(spec, schema, connectionName, connectionParameters);
                     var issues = SchemaSqlDataSourceFactory.ValidateBindings(report, schema);
                     if (bestIssues == null || issues.Count < bestIssues.Count)
                     {
@@ -55,10 +56,12 @@ namespace XafAIReportDesigner.Module.Services
                     {
                         report.Dispose();
                     }
+                    report = null; // owned by best, or already disposed
                     if (bestIssues.Count == 0) break;
                 }
                 catch (Exception ex)
                 {
+                    report?.Dispose();
                     lastError = ex;
                     setStatus?.Invoke($"Attempt {attempt} failed: {ex.Message}");
                 }
