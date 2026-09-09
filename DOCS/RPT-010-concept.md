@@ -1,6 +1,6 @@
 # RPT-010 concept — Web UI refinement (home page + designer chrome)
 
-Status: CONCEPT v4, 2026-09-09. Not implemented. Card: RPT-010 (ID 1063), deferred by the
+Status: CONCEPT v5, 2026-09-09 — APPROVED by the owner with three answers (below), implementation started on branch `rpt-010-web-ui`. Card: RPT-010 (ID 1063), deferred by the
 user on 2026-07-19 ("works, ui needs some refinement, not now"). v1 was reviewed by Codex the
 same day; v2 folds in that review (see "Review history" at the end). This is the design to
 approve before any code is written.
@@ -46,13 +46,27 @@ deferred for the reasons under D3 and "Progress").
 
 ## Decisions (recommendation first; Codex verdict in brackets)
 
-### D1 — UI toolkit: plain HTML + a small stylesheet, not DevExpress.Blazor  [agree]
+### D1 — UI toolkit: DevExpress.Blazor where possible  [owner decision, overrides the v1–v4 recommendation]
 
-The surface is one list, two forms, one progress box, one confirm dialog. HTML `<dialog>`,
-`<details>`, CSS grid and a ~120-line stylesheet cover it; the DX designer supplies its own
-chrome. Adding `DevExpress.Blazor` buys matching widgets at the cost of a large dependency and
-a second set of conventions for four controls. Escalation path: the page structure below does
-not change if `<select>`/`<button>` are later swapped for `DxComboBox`/`DxButton`.
+The owner chose the DevExpress component suite for a consistent look with the designer.
+`DevExpress.Blazor` 26.1.3 (same version as the reporting packages; in the local NuGet cache —
+the local feed has moved on to 26.1.4, so a fresh machine needs either the cache or a
+version bump of every DX package together). Setup per the 26.1 docs: `AddDevExpressBlazor()`
+in Program.cs, `@using DevExpress.Blazor` in `_Imports.razor`,
+`@DxResourceManager.RegisterTheme(Themes.Fluent)` in the App.razor head (RegisterScripts is
+already there). Mapping:
+
+| Surface | Component |
+|---|---|
+| report list + filter | `DxGrid` (`ShowSearchBox`), template column for badge and actions |
+| buttons | `DxButton` |
+| model dropdown, report picker | `DxComboBox` |
+| prompt / change text | `DxMemo`; report name `DxTextBox` |
+| progress | `DxLoadingPanel` over the form + the status line and timer |
+| delete confirm | `DxPopup` with two `DxButton`s (modal, Escape closes — replaces the `<dialog>` notes) |
+| collapsible New panel | `DxFormLayout` group with `Expanded` toggling, or a plain `<details>` |
+
+Plain HTML stays only where a DX component adds nothing (badge span, status line).
 
 ### D2 — Two pages: home = report gallery + AI panel; designer = designer + slim bar  [agree]
 
@@ -279,12 +293,11 @@ Codex judged v1's 7.5 h credible only for the visual shell; the two items it pri
 12–16 h (designer-side Modify, real cancellation) are out of scope in v2, so the total stays
 in the same band with the risk removed.
 
-## Open questions for the owner
+## Owner answers (2026-09-09)
 
-1. D1 — plain HTML/CSS (recommended by both reviewers) or bring in `DevExpress.Blazor`?
-2. Model dropdown in the top bar (proposed) or per form as now?
-3. Is "Modify only from the home page" acceptable, or is in-designer Modify wanted enough to
-   pay for dirty-state synchronisation with the DX client (+6–8 h, separate card)?
+1. D1 — **DevExpress.Blazor where possible.**
+2. **Model dropdown in the top bar.**
+3. **Modify only from the home page is acceptable.**
 
 ## Review history
 
