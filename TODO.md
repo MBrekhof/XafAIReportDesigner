@@ -3,8 +3,8 @@
 **Status: ACTIVE (2026-09-09).** The own provider-agnostic AI pipeline is merged to master
 (Generate + Modify via AI, any model, ~4s; DX AI CTP fully removed — RPT-007..009 in DONE.md).
 The Blazor/Web variant (RPT-005) is merged; UI refinement deferred (RPT-010). The Codex code
-review round (RPT-011..016, `DOCS/CODEX-REVIEW-2026-09-09.md`) is on branch
-`rpt-011-012-codex-fixes` — see DONE.md.
+review round (RPT-011..016) is merged; the web UI refinement (RPT-010, concept in
+`DOCS/RPT-010-concept.md`) is on branch `rpt-010-web-ui` — see DONE.md.
 The parking note below is historical (abandoned DX-CTP path).
 
 **Old status: PARKED (2026-07-19).** The exploration succeeded — the full pipeline works and is
@@ -22,18 +22,26 @@ and preserved in project memory.
   (`ReflectionSchemaDiscoveryService`, `SchemaSqlDataSourceFactory` incl. `ValidateBindings`)
   is UI-free and reusable as-is.
 
-## P3: Low
+## P2: Medium
 
-#### RPT-010: Web UI refinement (ID: 1063)
+#### RPT-017: Master-only specs render as stacked labels, not a table (ID: 1587)
 
-The web variant works (user-confirmed 2026-07-19) but the home page is bare-bones: plain
-HTML controls, no progress animation during generation (~5s of button-disabled silence), no
-report thumbnails/cards, top bar is minimal. Refine when the web variant becomes a daily
-tool — candidates: DevExpress Blazor components (DxButton/DxComboBox/DxLoadingPanel) for a
-consistent look with the designer, generation status streaming (SpecPipeline already emits
-per-attempt status), report list with delete, and a proper landing layout. Deliberately
-deferred by the user ("works, ui needs some refinement, not now").
-Codex review 2026-09-09 (Web#5): after a Generate with unresolved bindings the page navigates
-to the designer immediately, so the warning list is never seen — keep the result on screen
-with an explicit "Open designer" button when `Issues` is non-empty.
+Seen 2026-09-09 during the RPT-010 smoke test: "A list of customers with company name, city
+and country, one row per customer" produces a spec with `masterView: Customers`, four
+`masterFields` and no `levels`. `ReportSpecTranslator.BuildReport` puts masterFields as one
+label per line in the root Detail band (the shape meant for an invoice header), so the
+report reads as a stacked block per customer instead of a table with a header row. The
+translator only builds an `XRTable` for the innermost level.
 
+Fix (translator only, no prompt change):
+- `Levels` empty and `pagePerMasterRow` false → render masterFields as columns: header row
+  with the labels, root Detail band with one `XRTable` row of the expressions (reuse
+  `BuildRow`, `FieldSpec` → `ColumnSpec`, `Label ?? expression` as header, right-align
+  numeric/currency formats). `pagePerMasterRow` true keeps the stacked "one page per record"
+  shape.
+- Totals with no levels currently attach to nothing (`lastBand == null`) — put them in a
+  ReportFooter for the table shape.
+- `poc/translator-check.cs`: a flat spec yields an XRTable with N cells in Detail; a
+  pagePerMasterRow spec keeps stacked labels.
+
+Ceiling: a flat list wider than ~8 columns gets cramped at 650pt — same as the level table.

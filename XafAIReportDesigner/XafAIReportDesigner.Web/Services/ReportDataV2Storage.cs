@@ -33,9 +33,12 @@ public sealed class ReportDataV2Storage(ReportDataV2Store store) : ReportStorage
         store.Save(url, stream.ToArray());
     }
 
+    /// <summary>Designer "Save As": create-only, so it can never overwrite another report (RPT-010).</summary>
     public override string SetNewData(XtraReport report, string defaultUrl)
     {
-        SetData(report, defaultUrl);
+        using var stream = new MemoryStream();
+        report.SaveLayoutToXml(stream);
+        store.Insert(defaultUrl, stream.ToArray());
         return defaultUrl;
     }
 }

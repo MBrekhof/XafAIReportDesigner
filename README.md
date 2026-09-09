@@ -35,7 +35,8 @@ story in DOCS/DONE.md).
     throwing roll counts as a miss and never discards an earlier good one; remaining issues
     are shown as a warning.
   - `poc/translator-check.cs` — offline self-check of the translator and validator (no LLM, no
-    database): `dotnet run poc/translator-check.cs` from the repo root.
+    database): `dotnet run poc/translator-check.cs` from the repo root. `poc/store-check.cs`
+    checks the report store against the dev database.
 - **Modify via AI** (same ribbon group) — spec-level modification for own-pipeline reports: the
   spec JSON travels inside the layout (`XtraReport.Extensions`), the LLM edits the spec, the
   translator rebuilds. Structural edits ("move quantity to the first column") are array edits —
@@ -49,8 +50,13 @@ story in DOCS/DONE.md).
   names containing `/` or `\` are rejected up front (they double as web designer URLs). Saved
   layouts store the connection *name only* and credentials are restored on load.
 - Full DevExpress Report Designer ribbon UI (WinForms).
-- **Web designer** — the same pipeline + the browser Report Designer (`DxReportDesigner`):
-  generate/modify from the home page, then edit and preview in the browser. Shares the
+- **Web designer** — the same pipeline + the browser Report Designer (`DxReportDesigner`).
+  The home page (DevExpress Blazor) lists every report with search, an `AI` badge for
+  pipeline-generated ones and a lock for predefined XAF rows; Generate and Modify run inline
+  with progress, an elapsed timer and a result panel that keeps the binding warnings on screen
+  until you choose *Open in designer*. Delete with confirm. The model is picked once in the top
+  bar. Modify is available for AI reports only and never overwrites an edited or concurrently
+  saved layout (compare-and-save; the result lands beside it as `<name> (AI)`). Shares the
   `ReportDataV2` storage with the WinForms app, so both hosts see the same reports. Name-only
   connections resolve via `IConnectionProviderFactory` (no credentials in layouts here either).
 
@@ -106,14 +112,18 @@ story in DOCS/DONE.md).
   merged back into the spec. Font/colour-only edits are not detected.
 - Keep prompts free of data semantics that contradict the schema (e.g. discount formulas) —
   newer models refuse on contradictions, older ones silently pick a side.
-- Web host: bare-bones home page UI (refinement tracked as RPT-010), no authentication,
-  Windows hosting only for now (report rendering uses System.Drawing fonts; Linux containers
-  need the DevExpress Skia swap).
+- Web host: no authentication; Windows hosting only for now (report rendering uses
+  System.Drawing fonts; Linux containers need the DevExpress Skia swap). Modify via AI is
+  offered on the home page only, not inside the designer (unsaved designer edits would be
+  invisible to it); a running LLM call cannot be cancelled (the LlmTornado adapter ignores the
+  token).
+- A "one row per X" prompt with no detail level renders as stacked labels per row, not a
+  table — the translator only builds a table for the innermost level.
 
 ## Tech Stack
 
 - .NET 10.0 (`net10.0` / `net10.0-windows`; Web host: Blazor Interactive Server)
-- DevExpress XtraReports 26.1.3 (+ `DevExpress.Blazor.Reporting.JSBasedControls` on the web)
+- DevExpress XtraReports 26.1.3 (+ `DevExpress.Blazor` and `DevExpress.Blazor.Reporting.JSBasedControls` on the web)
 - EF Core 8.0.18 (entity model) + PostgreSQL (Npgsql 8; report storage is raw Npgsql)
 - LLMTornado + Microsoft.Extensions.AI — the pipeline talks to any provider through
   `IChatClient`

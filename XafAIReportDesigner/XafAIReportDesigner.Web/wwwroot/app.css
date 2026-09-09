@@ -1,0 +1,61 @@
+:root {
+    --bar: #2c3e50;
+    --bar-text: #ecf0f1;
+    --bar-link: #9fd3ff;
+    --panel: #ffffff;
+    --panel-border: #dfe3e8;
+    --muted: #5f6b7a;
+    --warn: #b45309;
+    --error: #b91c1c;
+    --ok: #15803d;
+}
+
+body { font-family: 'Segoe UI', sans-serif; margin: 0; background: #f4f6f8; }
+
+.topbar {
+    background: var(--bar); color: var(--bar-text);
+    padding: 8px 20px; display: flex; align-items: center; gap: 16px;
+}
+.topbar .title { font-weight: 600; font-size: 1.05rem; color: var(--bar-text); text-decoration: none; }
+.topbar .spacer { flex: 1; }
+.topbar .model { display: flex; align-items: center; gap: 8px; color: var(--bar-text); }
+.topbar .model .dxbl-combobox { min-width: 180px; }
+
+.content { padding: 16px 20px; max-width: 1200px; }
+.content h1 { font-size: 1.4rem; margin: 0 0 12px; }
+h1:focus { outline: none; } /* Blazor focuses the h1 after navigation; the theme would draw a ring */
+
+.toolbar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+
+.panel {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 6px;
+    padding: 14px 16px; margin: 12px 0;
+}
+.panel h3 { margin: 0 0 10px; font-size: 1.05rem; }
+.panel .row { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+.panel .row .grow { flex: 1; min-width: 240px; }
+
+.badge {
+    display: inline-block; font-size: 0.72rem; font-weight: 600; letter-spacing: .04em;
+    padding: 1px 6px; border-radius: 4px; margin-left: 8px; vertical-align: middle;
+}
+.badge.ai { background: #e0f2fe; color: #075985; }
+.badge.lock { background: #f1f5f9; color: var(--muted); }
+
+.actions { display: flex; gap: 6px; }
+
+.progress { display: flex; align-items: center; gap: 12px; }
+.progress .elapsed { font-variant-numeric: tabular-nums; color: var(--muted); }
+.progress .fails { margin: 6px 0 0 24px; color: var(--error); font-size: 0.9rem; }
+
+.status { margin-top: 8px; color: var(--muted); }
+.issues { color: var(--warn); margin: 6px 0 0; padding-left: 20px; }
+.error { color: var(--error); }
+.ok { color: var(--ok); }
+
+.designer-bar {
+    background: var(--bar); color: var(--bar-text); padding: 6px 16px;
+    display: flex; align-items: center; gap: 16px; height: 34px;
+}
+.designer-bar a { color: var(--bar-link); text-decoration: none; }
+.designer-bar .name { font-weight: 600; }

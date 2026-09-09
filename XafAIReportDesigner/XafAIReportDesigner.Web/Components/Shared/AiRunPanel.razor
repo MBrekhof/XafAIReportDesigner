@@ -1,0 +1,142 @@
+@* Generate-or-Modify form → progress → result. One instance per use on the home page. *@
+@inject AIReportService Ai
+@inject ReportDataV2Store Store
+@inject UiState Ui
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="panel">
+    @if (_result == null)
+    {
+        <h3>@(IsModify ? $"Modify \"{ReportName}\" via AI" : "New report from prompt")</h3>
+        <DxLoadingPanel Visible="@Running" Text="" IsContentBlocked="true">
+            <DxMemo @bind-Text="@Text" Rows="4" CssClass="w-100"
+                    NullText="@(IsModify ? "Describe the change, e.g. move the quantity column to the first position…" : "Describe the report (the AI receives the full schema incl. relationships)…")"
+                    InputId="@(IsModify ? "change" : "prompt")" />
+            <div class="row">
+                @if (!IsModify)
+                {
+                    <span>Save as</span>
+                    <DxTextBox @bind-Text="@NewName" CssClass="grow" InputId="report-name" />
+                }
+                <DxButton Text="@(IsModify ? "Modify" : "Generate")" RenderStyle="ButtonRenderStyle.Primary"
+                          Enabled="@(!Running && !Locked)" Click="@Run" Id="@(IsModify ? "modify-run" : "generate-run")" />
+                <DxButton Text="Close" RenderStyle="ButtonRenderStyle.Secondary" Enabled="@(!Running)" Click="@(() => OnClosed.InvokeAsync())" />
+            </div>
+        </DxLoadingPanel>
+        @if (Running)
+        {
+            <div class="progress" style="margin-top:10px">
+                <span id="@(IsModify ? "modify-status" : "status")">@_status</span>
+                <span class="elapsed">@_elapsed.ToString(@"mm\:ss")</span>
+            </div>
+            @if (_failures.Count > 0)
+            {
+                <ul class="fails">
+                    @foreach (var f in _failures) { <li>@f</li> }
+                </ul>
+            }
+        }
+        else if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="status error" id="@(IsModify ? "modify-status" : "status")">@_error</p>
+        }
+    }
+    else
+    {
+        <h3 class="@(_result.Success ? "ok" : "error")" id="@(IsModify ? "modify-status" : "status")">@_result.Message</h3>
+        @if (_result.Issues.Count > 0)
+        {
+            <p class="issues" style="padding-left:0">⚠ @_result.Issues.Count unresolved binding(s) — fix them in the designer:</p>
+            <ul class="issues">
+                @foreach (var issue in _result.Issues) { <li>@issue</li> }
+            </ul>
+        }
+        <div class="row">
+            @if (_result.Success)
+            {
+                <DxButton Text="Open in designer" RenderStyle="ButtonRenderStyle.Primary" Id="open-designer"
+                          Click="@(() => Nav.NavigateTo($"/designer?report={Uri.EscapeDataString(_result.SavedAs ?? ReportName ?? "")}"))" />
+            }
+            <DxButton Text="Close" RenderStyle="ButtonRenderStyle.Secondary" Click="@Close" />
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Null = Generate; a name = Modify that report.</summary>
+    [Parameter] public string? ReportName { get; set; }
+    /// <summary>Another run is active elsewhere on the page.</summary>
+    [Parameter] public bool Locked { get; set; }
+    [Parameter] public EventCallback<bool> RunningChanged { get; set; }
+    /// <summary>Raised on Close; the argument says whether the list needs a refresh.</summary>
+    [Parameter] public EventCallback<bool> OnClosed { get; set; }
+
+    bool IsModify => ReportName != null;
+    string Text { get; set; } = "";
+    string NewName { get; set; } = "";
+    bool Running { get; set; }
+
+    AIReportResult? _result;
+    string _status = "";
+    string? _error;
+    TimeSpan _elapsed;
+    readonly List<string> _failures = [];
+    System.Threading.Timer? _timer;
+    DateTime _started;
+
+    async Task Run()
+    {
+        if (string.IsNullOrWhiteSpace(Text)) { _error = IsModify ? "Describe the change." : "Describe the report."; return; }
+        if (!IsModify && !ReportDataV2Store.IsValidName(NewName.Trim())) { _error = "Report name may not be empty or contain '/' or '\\'."; return; }
+        _error = null; _failures.Clear(); _status = "Starting…"; _elapsed = TimeSpan.Zero;
+        await SetRunning(true);
+        _started = DateTime.UtcNow;
+        // Tick on the threadpool, mutate + render on the renderer's sync context.
+        _timer = new System.Threading.Timer(_ => { if (!_disposed) _ = InvokeAsync(() => { if (_disposed) return; _elapsed = DateTime.UtcNow - _started; StateHasChanged(); }); }, null, 1000, 1000);
+        try
+        {
+            var result = IsModify
+                ? await Ai.ModifyAsync(ReportName!, Text, Ui.Model, Store, SetStatus)
+                : await Ai.GenerateAsync(Text, Ui.Model, NewName.Trim(), Store, SetStatus);
+            if (result.Success) _result = result; else _error = result.Message;
+        }
+        catch (Exception ex)
+        {
+            _error = "Failed: " + ex.Message;
+        }
+        finally
+        {
+            _timer?.Dispose(); _timer = null;
+            await SetRunning(false);
+        }
+    }
+
+    void SetStatus(string status)
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed) return;
+            if (status.Contains(" failed: ")) _failures.Add(status); else _status = status;
+            StateHasChanged();
+        });
+    }
+
+    async Task SetRunning(bool value)
+    {
+        Running = value;
+        if (!_disposed) await RunningChanged.InvokeAsync(value);
+    }
+
+    // Close keeps the typed text (the host may keep this panel mounted); only the result goes.
+    Task Close()
+    {
+        var refresh = _result?.Success == true;
+        _result = null;
+        return OnClosed.InvokeAsync(refresh);
+    }
+
+    bool _disposed;
+    public void Dispose() { _disposed = true; _timer?.Dispose(); }
+}

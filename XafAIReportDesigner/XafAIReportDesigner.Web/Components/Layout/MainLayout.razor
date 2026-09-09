@@ -1,8 +1,21 @@
 @inherits LayoutComponentBase
+@inject AIReportService Ai
+@inject UiState Ui
 
 <div class="topbar">
-    <a href="/">AI Reports</a>
-    <a href="/designer">Designer</a>
+    <a class="title" href="/">AI Report Designer</a>
+    <span class="spacer"></span>
+    <span class="model">
+        <span>Model</span>
+        <DxComboBox Data="@AIReportService.KnownModels" @bind-Value="@Ui.Model" InputId="model" />
+    </span>
 </div>
 
 @Body
+
+@code {
+    protected override void OnInitialized()
+    {
+        if (string.IsNullOrEmpty(Ui.Model)) Ui.Model = Ai.DefaultModel;
+    }
+}
