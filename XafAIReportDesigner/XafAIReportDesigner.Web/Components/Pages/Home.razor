@@ -67,7 +67,9 @@
     protected override void OnInitialized()
     {
         Model = Ai.DefaultModel;
-        _reports = Store.ListNames();
+        // A DB outage here would otherwise surface as a blank error boundary (RPT-016).
+        try { _reports = Store.ListNames(); }
+        catch (Exception ex) { Status = "Database unavailable: " + ex.Message; }
     }
 
     async Task Generate()

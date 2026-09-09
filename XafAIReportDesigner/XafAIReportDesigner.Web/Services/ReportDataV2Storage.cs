@@ -1,6 +1,8 @@
 using DevExpress.XtraReports.UI;
 using DevExpress.XtraReports.Web.Extensions;
 
+using XafAIReportDesigner.Module.Services;
+
 namespace XafAIReportDesigner.Web.Services;
 
 /// <summary>

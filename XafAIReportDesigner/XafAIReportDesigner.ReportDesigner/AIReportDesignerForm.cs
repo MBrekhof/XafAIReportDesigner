@@ -11,7 +11,6 @@ using DevExpress.XtraReports.UserDesigner;
 using LlmTornado;
 using LlmTornado.Code;
 using LlmTornado.Microsoft.Extensions.AI;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Npgsql;
 using XafAIReportDesigner.Module.Services;
@@ -28,6 +27,7 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     private const string AppConnectionName = "XafAIReportDesigner";
 
     private readonly string _connectionString;
+    private readonly ReportDataV2Store _store;
     private readonly ReflectionSchemaDiscoveryService _schemaService;
     private readonly string _apiKey;
     private readonly string _defaultGenerateModel;
@@ -37,6 +37,7 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         string apiKey, string defaultGenerateModel)
     {
         _connectionString = connectionString;
+        _store = new ReportDataV2Store(connectionString);
         _schemaService = schemaService;
         _apiKey = apiKey;
         _defaultGenerateModel = defaultGenerateModel;
@@ -259,12 +260,9 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     {
         try
         {
-            using var context = CreateDbContext();
-            var reports = context.Set<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>()
-                .OrderBy(r => r.DisplayName)
-                .ToList();
-
-            if (reports.Count == 0)
+            // Names only — the layout blob is fetched for the chosen row (RPT-016).
+            var names = _store.ListNames();
+            if (names.Count == 0)
             {
                 MessageBox.Show("No reports found in the database.", "Load Report",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -272,7 +270,6 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             }
 
             // Show a simple selection dialog.
-            var names = reports.Select(r => r.DisplayName ?? "(unnamed)").ToArray();
             using var dialog = new Form
             {
                 Text = "Load Report from Database",
@@ -294,15 +291,15 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
 
             if (dialog.ShowDialog(this) == DialogResult.OK && listBox.SelectedIndex >= 0)
             {
-                var selectedReport = reports[listBox.SelectedIndex];
-                if (selectedReport.Content is { Length: > 0 })
+                var selectedName = names[listBox.SelectedIndex];
+                if (_store.Load(selectedName) is { Length: > 0 } content)
                 {
                     var report = new XtraReport();
-                    using var stream = new MemoryStream(selectedReport.Content);
+                    using var stream = new MemoryStream(content);
                     report.LoadLayoutFromXml(stream);
                     // The row's name wins over whatever the layout carries (layouts saved
                     // before RPT-011 may still hold the name they were originally saved as).
-                    report.DisplayName = selectedReport.DisplayName;
+                    report.DisplayName = selectedName;
                     RestoreAppConnection(report);
                     OpenReport(report);
                 }
@@ -319,7 +316,8 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     {
         try
         {
-            var report = ActiveDesignPanel?.Report;
+            var panel = ActiveDesignPanel;
+            var report = panel?.Report;
             if (report == null)
             {
                 MessageBox.Show("No active report to save.", "Save Report",
@@ -331,17 +329,13 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             var reportName = PromptForReportName(report.DisplayName ?? "New Report");
             if (string.IsNullOrWhiteSpace(reportName)) return;
             reportName = reportName.Trim();
-            if (reportName.IndexOfAny(['/', '\\']) >= 0)
+            if (!ReportDataV2Store.IsValidName(reportName))
             {
                 MessageBox.Show("Report name may not contain '/' or '\\' (it doubles as the web designer's URL).",
                     "Save Report", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-
-            using var context = CreateDbContext();
-            var existing = context.Set<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>()
-                .FirstOrDefault(r => r.DisplayName == reportName);
-            if (existing is { IsPredefined: true })
+            if (_store.Find(reportName).IsPredefined)
             {
                 MessageBox.Show($"'{reportName}' is a predefined XAF report and cannot be overwritten — choose another name.",
                     "Save Report", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -355,27 +349,10 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             report.SaveLayoutToXml(stream);
             var content = stream.ToArray();
 
-            // Extract metadata that XAF expects on ReportDataV2.
-            var dataTypeName = ExtractDataTypeName(report);
-
-            if (existing != null)
-            {
-                existing.Content = content;
-                existing.DataTypeName = dataTypeName;
-            }
-            else
-            {
-                var reportData = new DevExpress.Persistent.BaseImpl.EF.ReportDataV2
-                {
-                    DisplayName = reportName,
-                    Content = content,
-                    DataTypeName = dataTypeName,
-                    IsInplaceReport = false,
-                };
-                context.Set<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>().Add(reportData);
-            }
-
-            context.SaveChanges();
+            _store.Save(reportName, content, ExtractDataTypeName(report));
+            // Documented DX pattern for custom saving: otherwise closing still prompts to
+            // save to a file (XRDesignPanel.ReportState docs).
+            panel!.ReportState = ReportState.Saved;
             MessageBox.Show($"Report '{reportName}' saved successfully.", "Save Report",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
@@ -474,39 +451,4 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         public SqlDataConnection? LoadConnection(string connectionName)
             => connectionName == _connection.Name ? _connection : null;
     }
-
-    private DbContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<ReportDbContext>()
-            .UseNpgsql(_connectionString)
-            .Options;
-        return new ReportDbContext(options);
-    }
-
-    /// <summary>
-    /// Lightweight DbContext that only maps <see cref="DevExpress.Persistent.BaseImpl.EF.ReportDataV2"/>
-    /// to avoid XAF's change-tracking requirements on entities like FileData.
-    /// </summary>
-    private sealed class ReportDbContext : DbContext
-    {
-        public ReportDbContext(DbContextOptions<ReportDbContext> options) : base(options) { }
-
-        public DbSet<DevExpress.Persistent.BaseImpl.EF.ReportDataV2> ReportDataV2 => Set<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>();
-
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            base.OnModelCreating(modelBuilder);
-
-            // Map only ReportDataV2 and its base type (BaseObject provides ID).
-            modelBuilder.Entity<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>(entity =>
-            {
-                entity.ToTable("ReportDataV2");
-                entity.HasKey(e => e.ID);
-            });
-
-            // Ignore all other XAF base types that EF might try to discover.
-            modelBuilder.Ignore<DevExpress.Persistent.BaseImpl.EF.BaseObject>();
-        }
-    }
-
 }
