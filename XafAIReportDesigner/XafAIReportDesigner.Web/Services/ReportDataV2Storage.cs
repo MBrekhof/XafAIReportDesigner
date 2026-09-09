@@ -11,8 +11,7 @@ public sealed class ReportDataV2Storage(ReportDataV2Store store) : ReportStorage
 {
     public override bool CanSetData(string url) => true;
 
-    public override bool IsValidUrl(string url) =>
-        !string.IsNullOrWhiteSpace(url) && url.IndexOfAny(['/', '\\']) < 0;
+    public override bool IsValidUrl(string url) => ReportDataV2Store.IsValidName(url);
 
     public override byte[] GetData(string url)
     {

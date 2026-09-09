@@ -163,6 +163,9 @@ CREATE TABLE "ReportDataV2" (
     "GCRecord" INTEGER,
     "OptimisticLockField" INTEGER DEFAULT 0
 );
+-- Both designers address reports by DisplayName (RPT-011): a duplicate breaks the web
+-- designer's URL list and makes "which row did Save hit" a coin toss.
+CREATE UNIQUE INDEX "IX_ReportDataV2_DisplayName" ON "ReportDataV2" ("DisplayName");
 
 -- ============================================================
 -- SEED DATA

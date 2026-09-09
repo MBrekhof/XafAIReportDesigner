@@ -317,14 +317,30 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             // Prompt for report name using a simple input dialog.
             var reportName = PromptForReportName(report.DisplayName ?? "New Report");
             if (string.IsNullOrWhiteSpace(reportName)) return;
-
-            using var stream = new MemoryStream();
-            report.SaveLayoutToXml(stream);
-            var content = stream.ToArray();
+            reportName = reportName.Trim();
+            if (reportName.IndexOfAny(['/', '\\']) >= 0)
+            {
+                MessageBox.Show("Report name may not contain '/' or '\\' (it doubles as the web designer's URL).",
+                    "Save Report", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
             using var context = CreateDbContext();
             var existing = context.Set<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>()
                 .FirstOrDefault(r => r.DisplayName == reportName);
+            if (existing is { IsPredefined: true })
+            {
+                MessageBox.Show($"'{reportName}' is a predefined XAF report and cannot be overwritten — choose another name.",
+                    "Save Report", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // The layout carries its own name: without this, "Save as B" leaves DisplayName at
+            // "A" and the next Save silently overwrites A (RPT-011).
+            report.DisplayName = reportName;
+            using var stream = new MemoryStream();
+            report.SaveLayoutToXml(stream);
+            var content = stream.ToArray();
 
             // Extract metadata that XAF expects on ReportDataV2.
             var dataTypeName = ExtractDataTypeName(report);

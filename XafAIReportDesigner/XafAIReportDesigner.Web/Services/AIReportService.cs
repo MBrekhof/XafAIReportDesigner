@@ -23,6 +23,13 @@ public sealed class AIReportService(
     public async Task<AIReportResult> GenerateAsync(string prompt, string model, string reportName,
         ReportDataV2Store store, Action<string>? setStatus = null)
     {
+        // Create-only (RPT-011): a new report must not silently replace an existing one, and
+        // the name must survive as a designer URL. Checked before the LLM round-trip.
+        if (!ReportDataV2Store.IsValidName(reportName))
+            return new AIReportResult(false, "Report name may not be empty or contain '/' or '\\'.", []);
+        if (store.Exists(reportName))
+            return new AIReportResult(false, $"A report named '{reportName}' already exists — pick another name or use Modify.", []);
+
         var schemaText = SchemaText();
         return await RunAsync(ReportSpecTranslator.BuildSystemPrompt(schemaText), prompt, prompt,
             model, reportName, store, setStatus);

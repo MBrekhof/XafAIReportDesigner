@@ -17,6 +17,19 @@ public sealed class ReportDataV2Store(string connectionString)
         return names;
     }
 
+    /// <summary>Valid for both hosts: the web designer uses the name as a URL segment.</summary>
+    public static bool IsValidName(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && name.Length <= 256 && name.IndexOfAny(['/', '\\']) < 0;
+
+    public bool Exists(string name)
+    {
+        using var conn = new NpgsqlConnection(connectionString);
+        conn.Open();
+        using var cmd = new NpgsqlCommand("SELECT 1 FROM \"ReportDataV2\" WHERE \"DisplayName\" = @name", conn);
+        cmd.Parameters.AddWithValue("name", name);
+        return cmd.ExecuteScalar() != null;
+    }
+
     public byte[]? Load(string name)
     {
         using var conn = new NpgsqlConnection(connectionString);
