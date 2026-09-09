@@ -57,7 +57,7 @@ public sealed class AIReportService(
         // edits are not in the spec — keep the edited report and save the result beside it
         // instead of overwriting (RPT-015).
         var edited = ReportSpecTranslator.HasManualEdits(current);
-        var targetName = edited ? NextFreeName(store, reportName + " (AI)") : reportName;
+        var targetName = edited ? NextFreeName(store, reportName, " (AI)") : reportName;
         var result = await RunAsync(ReportSpecTranslator.BuildModifySystemPrompt(schemaText, currentSpec), change,
             (originalPrompt ?? "") + "\n[modified]: " + change, model, targetName, store, createNew: edited, setStatus);
         return edited && result.Success
@@ -65,11 +65,12 @@ public sealed class AIReportService(
             : result;
     }
 
-    private static string NextFreeName(ReportDataV2Store store, string baseName)
+    private static string NextFreeName(ReportDataV2Store store, string sourceName, string marker)
     {
-        // Keep the suffixed name inside the 256-char DisplayName limit.
-        const int MaxLength = 256, SuffixRoom = 6; // " 9999"
-        var stem = baseName.Length > MaxLength - SuffixRoom ? baseName[..(MaxLength - SuffixRoom)] : baseName;
+        // Truncate the SOURCE so the marker and a counter always fit the 256-char DisplayName.
+        const int MaxLength = 256, CounterRoom = 8;
+        var room = MaxLength - marker.Length - CounterRoom;
+        var stem = (sourceName.Length > room ? sourceName[..room] : sourceName) + marker;
         var name = stem;
         for (int i = 2; store.Exists(name); i++) name = $"{stem} {i}";
         return name;
