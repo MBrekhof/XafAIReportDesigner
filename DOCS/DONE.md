@@ -1,5 +1,75 @@
 # Done
 
+#### RPT-011: Report persistence — name-as-identity overwrites and Save-as bug (ID: 1581)
+
+Completed 2026-09-09 (branch `rpt-011-012-codex-fixes`, commits 84d2c53, 2b61f1e, a12c812).
+From the Codex review (`DOCS/CODEX-REVIEW-2026-09-09.md`, Web#1, ReportDesigner#1/#3, Web#2,
+Cross-cutting#1). Unique index `IX_ReportDataV2_DisplayName` (seed, IF NOT EXISTS; applied to
+the dev DB). Web Generate is create-only (`ReportDataV2Store.Insert`) and validates the name
+before the LLM call; the store validates every write so the designer's Save-As path is covered.
+WinForms Save writes the chosen name into the layout (Save-as no longer overwrites the
+original on the next Save), refuses `IsPredefined` rows (DX EF source: their `Content` setter is
+a no-op), and Load takes the row's name over the layout's. Not adopted: Codex's ID-keyed
+persistence redesign — single-user tool. Web guards verified via Playwright; WinForms Save-as
+path built but not driven in the UI.
+
+#### RPT-012: ReportSpecTranslator drops innermost headerFields, mis-repairs chains, no literal escaping (ID: 1582)
+
+Completed 2026-09-09 (commits 96db8fa, 2b61f1e). Codex Module#2/#4/#5/#6. `RepairChains`
+order is now: drop a redundant prefix while the remainder still names a relation → wrong-
+direction repair → bare column → BFS (the first pass had the wrong-direction repair first and
+Codex caught the regression: a 3-segment chain got rewritten hop by hop into a parent round
+trip). `Literal()` doubles apostrophes in labels/formats (DX criteria syntax). `PagePerMasterRow`
+falls back to the root Detail band. The prompt forbids innermost `headerFields` (the translator
+never rendered them). Known ceiling, documented in the code: a chain that doubles back through
+a one-to-many hop inside a scalar expression is ambiguous by construction. `poc/translator-
+check.cs` is the offline gate (no LLM, no DB) — grown to 24 assertions over the round.
+
+#### RPT-013: SpecPipeline robustness — null spec collections, exception loses best roll, syntax check, disposal (ID: 1583)
+
+Completed 2026-09-09 (commits 46be27e, d0181fa). Codex Module#1/#3/#7, Web#3. `ParseSpec`
+rejects `{}`/missing masterView and fails the roll on a malformed supplied entry (Codex caught
+the first pass silently dropping them); missing collections default to empty.
+`SpecPipeline.RollBestAsync` treats a throwing attempt as a failed roll, keeps the best earlier
+roll, disposes losers and reports built in a failed attempt, surfaces the last error only when
+nothing succeeded. `ValidateBindings` gates syntax with `CriteriaOperator.Parse` and walks
+field chains on the parsed form (bare identifiers get bracketed, so `Nope + 1` is caught),
+reports empty expressions and an empty root DataMember. Web `AIReportService` disposes the
+temporary and winning reports.
+
+#### RPT-014: Strip stale DX-CTP guidance from prompts, dead helpers, junk DataTypeName (ID: 1584)
+
+Completed 2026-09-09 (commit 38a9e1a). Codex Module#8, ReportDesigner#2. `DescribeDataMembers`
+sends expression rules + relation list only (the band-layout rules were CTP-era and
+contradicted the single-deep-band translator); `ValidateBindings` comment no longer recommends
+repair requests; `SchemaSqlDataSourceFactory.Attach()` and `GenerateSystemPrompt()` deleted (no
+callers; the Attach recipe stays in RPT-004 below); WinForms stores the master entity's CLR
+`FullName` in `DataTypeName` (what XAF reads) instead of the first SQL query name.
+
+#### RPT-015: Modify via AI discards manual designer edits (spec/layout divergence) (ID: 1585)
+
+Completed 2026-09-09 (commits 6783894, 8b14059). Codex Cross-cutting#2 — a design trade-off of
+RPT-008, now guarded: `AttachSpec` stores a structural fingerprint (control types, bounds,
+text, expression bindings, band DataMember/FilterString; SHA256) in `Extensions`;
+`HasManualEdits` compares. WinForms asks Yes/No before the roll (result opens as a new
+document anyway); Web leaves an edited report untouched and saves the result as `<name> (AI)`
+(create-only, counter on collision, length-capped). Control names are deliberately NOT hashed:
+the translator leaves them empty and the web designer assigns them on load (Codex traced it in
+the DX client source) — an untouched web save must not read as an edit. Font/colour-only edits
+are not detected. Pre-existing reports without a fingerprint count as clean.
+
+#### RPT-016: One ReportDataV2 store for both hosts + small host hygiene (ID: 1586)
+
+Completed 2026-09-09 (commit a12c812). Codex Cross-cutting#3, ReportDesigner#4/#5, Web#4.
+`ReportDataV2Store` lives in the Module (raw Npgsql); WinForms uses it and its private EF
+`ReportDbContext` is gone; `Save` is one UPDATE (`AND NOT IsPredefined`, COALESCE on
+DataTypeName) then `Find()` to tell predefined from absent before INSERT. WinForms Load lists
+names and fetches only the chosen blob; Save sets `panel.ReportState = ReportState.Saved`
+(documented DX pattern) so closing no longer prompts for a file. Web pages catch a DB failure
+in `OnInitialized` and show it. Package refs now transitive via the Module removed from both
+host csprojs. Chat-client creation + prompt assembly stay duplicated on purpose (6 lines each).
+Verified: web home lists reports and the designer opens an existing report through the store.
+
 #### RPT-005: Blazor/Web Report Designer variant with the OWN pipeline (ID: 1060)
 
 Completed 2026-07-19 (branch `rpt-005-web-designer`). New `XafAIReportDesigner.Web` project:
