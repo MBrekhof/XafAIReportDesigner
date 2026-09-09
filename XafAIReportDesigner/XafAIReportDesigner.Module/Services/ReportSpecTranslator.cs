@@ -34,8 +34,8 @@ JSON shape:
   "levels": [                        // nested one-to-many drill-downs, outermost first
     {
       "relation": string,            // EXACTLY ONE relation name, valid from the previous level's entity (or from masterView for the first level)
-      "headerFields": [ {"expression": string, "label": string|null, "format": string|null} ],  // shown once per row of THIS level
-      "columns": [ {"expression": string, "header": string, "format": string|null, "rightAlign": bool} ]  // table over THIS level's rows; usually only the innermost level has columns
+      "headerFields": [ {"expression": string, "label": string|null, "format": string|null} ],  // INTERMEDIATE levels only: lookup fields printed once per master row (the first related row). The INNERMOST level MUST use "headerFields": [] — everything it shows goes in columns.
+      "columns": [ {"expression": string, "header": string, "format": string|null, "rightAlign": bool} ]  // table over THIS level's rows; only the innermost level's columns are rendered
     }
   ],
   "totals": [ {"label": string, "expression": string, "format": string|null} ]   // rendered after the innermost table, once per master row
@@ -126,6 +126,8 @@ Expression rules (DevExpress criteria language):
                 var repaired = field with { Expression = RepairChains(field.Expression, spec.MasterView, relations, columns) };
                 if (seen.Add(repaired.Expression)) rootFields.Add(repaired);
             }
+            // ponytail: the innermost level's headerFields have no band to live in (its rows ARE
+            // the table) — the prompt forbids them; if a model still emits them they are dropped.
             var prefix = new List<string>();
             foreach (var level in spec.Levels.Take(Math.Max(0, spec.Levels.Count - 1)))
             {
@@ -217,8 +219,8 @@ Expression rules (DevExpress criteria language):
                 lastBand.Bands.Add(footer);
             }
 
-            if (spec.PagePerMasterRow && lastBand != null)
-                lastBand.PageBreak = PageBreak.AfterBand;
+            if (spec.PagePerMasterRow)
+                (lastBand ?? (Band)rootDetail).PageBreak = PageBreak.AfterBand;
 
             return report;
         }
@@ -261,15 +263,18 @@ Expression rules (DevExpress criteria language):
         private static string WithLabel(FieldSpec field)
         {
             var expr = Formatted(field.Expression, field.Format);
-            return string.IsNullOrEmpty(field.Label) ? expr : $"'{field.Label}: ' + {expr}";
+            return string.IsNullOrEmpty(field.Label) ? expr : $"{Literal(field.Label + ": ")} + {expr}";
         }
+
+        /// <summary>Criteria-language string constant: apostrophes are doubled (DX "Criteria Language Syntax").</summary>
+        private static string Literal(string text) => "'" + text.Replace("'", "''") + "'";
 
         // Models emit bare .NET formats ("c2", "n2") as often as placeholders — normalize.
         private static string? NormalizeFormat(string? format) =>
             string.IsNullOrEmpty(format) ? null : format.Contains("{0") ? format : "{0:" + format + "}";
 
         private static string Formatted(string expression, string? format) =>
-            NormalizeFormat(format) is string f ? $"FormatString('{f}', {expression})" : expression;
+            NormalizeFormat(format) is string f ? $"FormatString({Literal(f)}, {expression})" : expression;
 
         private static string PrefixChains(string expression, List<string> prefixSegments)
         {
@@ -295,16 +300,19 @@ Expression rules (DevExpress criteria language):
                     var segments = m.Value.Replace("[", "").Replace("]", "").Split('.').Select(s => s.Trim()).ToArray();
                     if (Resolves(contextEntity, segments)) return m.Value;
 
+                    // Wrong-direction relation segment (e.g. [ProductsOrderItems] used from
+                    // OrderItems): swap for the relation from the current entity to the
+                    // misused name's master entity, then re-check. This runs BEFORE the
+                    // prefix-dropping repair: [ProductsOrderItems].[UnitPrice] means the
+                    // product's price, and dropping the segment would silently bind the
+                    // order line's UnitPrice instead (RPT-012).
+                    if (RepairSegments(contextEntity, segments) is string[] fixedSegments)
+                        return string.Join(".", fixedSegments.Select(s => $"[{s}]"));
+
                     // Over-qualified chain: drop redundant leading segments if the rest resolves.
                     for (int k = 1; k < segments.Length; k++)
                         if (Resolves(contextEntity, segments[k..]))
                             return string.Join(".", segments[k..].Select(s => $"[{s}]"));
-
-                    // Wrong-direction relation segment (e.g. [ProductsOrderItems] used from
-                    // OrderItems): swap for the relation from the current entity to the
-                    // misused name's master entity, then re-check.
-                    if (RepairSegments(contextEntity, segments) is string[] fixedSegments)
-                        return string.Join(".", fixedSegments.Select(s => $"[{s}]"));
 
                     // BFS for the shortest relation path whose end entity resolves the chain.
                     var queue = new Queue<(string Entity, List<string> Path)>();
