@@ -25,19 +25,29 @@ story in DOCS/DONE.md).
   - `ReflectionSchemaDiscoveryService` — discovers `[AIVisible]`/`[AIDescription]` entities and
     emits the schema text (tables, columns, enums, FK graph) for the spec prompt;
   - `SchemaSqlDataSourceFactory` — builds the matching `SqlDataSource` (query per table +
-    named master-detail relations both FK directions) and validates every generated expression
-    path against the schema/relation graph;
+    named master-detail relations both FK directions) and validates every generated expression:
+    criteria-language syntax (`CriteriaOperator.Parse`) plus every field path against the
+    schema/relation graph;
   - `ReportSpecTranslator` — spec→layout translation encoding the band shapes proven against
     DX-generated layouts, plus deterministic chain repair (BFS over the relation graph fixes
     under-/over-qualified and wrong-direction field paths the LLM emits);
-  - **validation + cheap retries** — up to 3 fresh rolls, best result wins; remaining issues
+  - **validation + cheap retries** — up to 3 fresh rolls, best result wins; a malformed or
+    throwing roll counts as a miss and never discards an earlier good one; remaining issues
     are shown as a warning.
+  - `poc/translator-check.cs` — offline self-check of the translator and validator (no LLM, no
+    database): `dotnet run poc/translator-check.cs` from the repo root.
 - **Modify via AI** (same ribbon group) — spec-level modification for own-pipeline reports: the
   spec JSON travels inside the layout (`XtraReport.Extensions`), the LLM edits the spec, the
   translator rebuilds. Structural edits ("move quantity to the first column") are array edits —
   reliable by construction, ~2-3s. Replaces the DX CTP Modify chat for these reports.
-- **Report persistence** — Load/Save to the XAF `ReportDataV2` table in PostgreSQL; saved layouts
-  store the connection *name only* and credentials are restored on load.
+  A layout fingerprint stored with the spec detects hand edits made in the designer since
+  generation: WinForms asks before rebuilding, the web host saves the result beside the edited
+  report as `<name> (AI)` instead of overwriting it.
+- **Report persistence** — Load/Save to the XAF `ReportDataV2` table in PostgreSQL through one
+  shared `ReportDataV2Store` (Module). Report names are identities: a unique index backs them,
+  generating under an existing name is refused, predefined XAF rows are never overwritten, and
+  names containing `/` or `\` are rejected up front (they double as web designer URLs). Saved
+  layouts store the connection *name only* and credentials are restored on load.
 - Full DevExpress Report Designer ribbon UI (WinForms).
 - **Web designer** — the same pipeline + the browser Report Designer (`DxReportDesigner`):
   generate/modify from the home page, then edit and preview in the browser. Shares the
@@ -90,7 +100,10 @@ story in DOCS/DONE.md).
 
 - The own pipeline's spec covers title/master fields/nested levels/columns/totals — the common
   report shapes. Exotic layouts (cross-tabs, charts, side-by-side subreports) are not in the
-  spec yet; extend `ReportSpec` + `ReportSpecTranslator` as needs appear.
+  spec yet; extend `ReportSpec` + `ReportSpecTranslator` as needs appear. Only the innermost
+  level renders as a table; intermediate levels contribute lookup fields once per master row.
+- Modify via AI rebuilds from the spec: designer edits are detected (see Features) but not
+  merged back into the spec. Font/colour-only edits are not detected.
 - Keep prompts free of data semantics that contradict the schema (e.g. discount formulas) —
   newer models refuse on contradictions, older ones silently pick a side.
 - Web host: bare-bones home page UI (refinement tracked as RPT-010), no authentication,
@@ -101,6 +114,6 @@ story in DOCS/DONE.md).
 
 - .NET 10.0 (`net10.0` / `net10.0-windows`; Web host: Blazor Interactive Server)
 - DevExpress XtraReports 26.1.3 (+ `DevExpress.Blazor.Reporting.JSBasedControls` on the web)
-- EF Core 8.0.18 + PostgreSQL (Npgsql 8)
+- EF Core 8.0.18 (entity model) + PostgreSQL (Npgsql 8; report storage is raw Npgsql)
 - LLMTornado + Microsoft.Extensions.AI — the pipeline talks to any provider through
   `IChatClient`

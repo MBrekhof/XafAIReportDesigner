@@ -1,8 +1,10 @@
 # TODO
 
-**Status: ACTIVE (2026-07-19).** The own provider-agnostic AI pipeline is merged to master
+**Status: ACTIVE (2026-09-09).** The own provider-agnostic AI pipeline is merged to master
 (Generate + Modify via AI, any model, ~4s; DX AI CTP fully removed — RPT-007..009 in DONE.md).
-The Blazor/Web variant (RPT-005) is merged; UI refinement deferred (RPT-010).
+The Blazor/Web variant (RPT-005) is merged; UI refinement deferred (RPT-010). The Codex code
+review round (RPT-011..016, `DOCS/CODEX-REVIEW-2026-09-09.md`) is on branch
+`rpt-011-012-codex-fixes` — see DONE.md.
 The parking note below is historical (abandoned DX-CTP path).
 
 **Old status: PARKED (2026-07-19).** The exploration succeeded — the full pipeline works and is
@@ -31,4 +33,7 @@ tool — candidates: DevExpress Blazor components (DxButton/DxComboBox/DxLoading
 consistent look with the designer, generation status streaming (SpecPipeline already emits
 per-attempt status), report list with delete, and a proper landing layout. Deliberately
 deferred by the user ("works, ui needs some refinement, not now").
+Codex review 2026-09-09 (Web#5): after a Generate with unresolved bindings the page navigates
+to the designer immediately, so the warning list is never seen — keep the result on screen
+with an explicit "Open designer" button when `Issues` is non-empty.
 

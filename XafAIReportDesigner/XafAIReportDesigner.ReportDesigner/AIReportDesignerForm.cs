@@ -11,7 +11,6 @@ using DevExpress.XtraReports.UserDesigner;
 using LlmTornado;
 using LlmTornado.Code;
 using LlmTornado.Microsoft.Extensions.AI;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Npgsql;
 using XafAIReportDesigner.Module.Services;
@@ -28,6 +27,7 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     private const string AppConnectionName = "XafAIReportDesigner";
 
     private readonly string _connectionString;
+    private readonly ReportDataV2Store _store;
     private readonly ReflectionSchemaDiscoveryService _schemaService;
     private readonly string _apiKey;
     private readonly string _defaultGenerateModel;
@@ -37,6 +37,7 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         string apiKey, string defaultGenerateModel)
     {
         _connectionString = connectionString;
+        _store = new ReportDataV2Store(connectionString);
         _schemaService = schemaService;
         _apiKey = apiKey;
         _defaultGenerateModel = defaultGenerateModel;
@@ -148,6 +149,16 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             return;
         }
 
+        // Modify rebuilds from the spec; hand edits made in the designer are not in the spec
+        // (RPT-015). The result opens as a NEW document, so nothing is lost unless the user
+        // saves over the original — but say so before spending the roll.
+        if (ReportSpecTranslator.HasManualEdits(current) && MessageBox.Show(
+                "This report was edited in the designer after it was generated. Modify via AI " +
+                "rebuilds it from the AI spec, so those manual edits will not carry over.\n\n" +
+                "The result opens as a new document; this one stays open. Continue?",
+                "Modify via AI", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            return;
+
         var change = PromptForText("Modify Report via AI",
             "Describe the change (e.g. \"move the quantity column to the first position\"):");
         if (string.IsNullOrWhiteSpace(change)) return;
@@ -249,12 +260,9 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     {
         try
         {
-            using var context = CreateDbContext();
-            var reports = context.Set<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>()
-                .OrderBy(r => r.DisplayName)
-                .ToList();
-
-            if (reports.Count == 0)
+            // Names only — the layout blob is fetched for the chosen row (RPT-016).
+            var names = _store.ListNames();
+            if (names.Count == 0)
             {
                 MessageBox.Show("No reports found in the database.", "Load Report",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -262,7 +270,6 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             }
 
             // Show a simple selection dialog.
-            var names = reports.Select(r => r.DisplayName ?? "(unnamed)").ToArray();
             using var dialog = new Form
             {
                 Text = "Load Report from Database",
@@ -284,12 +291,15 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
 
             if (dialog.ShowDialog(this) == DialogResult.OK && listBox.SelectedIndex >= 0)
             {
-                var selectedReport = reports[listBox.SelectedIndex];
-                if (selectedReport.Content is { Length: > 0 })
+                var selectedName = names[listBox.SelectedIndex];
+                if (_store.Load(selectedName) is { Length: > 0 } content)
                 {
                     var report = new XtraReport();
-                    using var stream = new MemoryStream(selectedReport.Content);
+                    using var stream = new MemoryStream(content);
                     report.LoadLayoutFromXml(stream);
+                    // The row's name wins over whatever the layout carries (layouts saved
+                    // before RPT-011 may still hold the name they were originally saved as).
+                    report.DisplayName = selectedName;
                     RestoreAppConnection(report);
                     OpenReport(report);
                 }
@@ -306,7 +316,8 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     {
         try
         {
-            var report = ActiveDesignPanel?.Report;
+            var panel = ActiveDesignPanel;
+            var report = panel?.Report;
             if (report == null)
             {
                 MessageBox.Show("No active report to save.", "Save Report",
@@ -317,36 +328,31 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
             // Prompt for report name using a simple input dialog.
             var reportName = PromptForReportName(report.DisplayName ?? "New Report");
             if (string.IsNullOrWhiteSpace(reportName)) return;
+            reportName = reportName.Trim();
+            if (!ReportDataV2Store.IsValidName(reportName))
+            {
+                MessageBox.Show("Report name may not contain '/' or '\\' (it doubles as the web designer's URL).",
+                    "Save Report", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (_store.Find(reportName).IsPredefined)
+            {
+                MessageBox.Show($"'{reportName}' is a predefined XAF report and cannot be overwritten — choose another name.",
+                    "Save Report", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
+            // The layout carries its own name: without this, "Save as B" leaves DisplayName at
+            // "A" and the next Save silently overwrites A (RPT-011).
+            report.DisplayName = reportName;
             using var stream = new MemoryStream();
             report.SaveLayoutToXml(stream);
             var content = stream.ToArray();
 
-            using var context = CreateDbContext();
-            var existing = context.Set<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>()
-                .FirstOrDefault(r => r.DisplayName == reportName);
-
-            // Extract metadata that XAF expects on ReportDataV2.
-            var dataTypeName = ExtractDataTypeName(report);
-
-            if (existing != null)
-            {
-                existing.Content = content;
-                existing.DataTypeName = dataTypeName;
-            }
-            else
-            {
-                var reportData = new DevExpress.Persistent.BaseImpl.EF.ReportDataV2
-                {
-                    DisplayName = reportName,
-                    Content = content,
-                    DataTypeName = dataTypeName,
-                    IsInplaceReport = false,
-                };
-                context.Set<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>().Add(reportData);
-            }
-
-            context.SaveChanges();
+            _store.Save(reportName, content, ExtractDataTypeName(report));
+            // Documented DX pattern for custom saving: otherwise closing still prompts to
+            // save to a file (XRDesignPanel.ReportState docs).
+            panel!.ReportState = ReportState.Saved;
             MessageBox.Show($"Report '{reportName}' saved successfully.", "Save Report",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
@@ -382,30 +388,15 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
     }
 
     /// <summary>
-    /// Tries to extract a data type name from the report's data source
-    /// so XAF can associate the report with a business object type.
-    /// Returns the SQL data source's first query name or empty string.
+    /// XAF reads <c>ReportDataV2.DataTypeName</c> as a CLR type name (the business object the
+    /// report is "about"). The root DataMember names the master view; map it back to the
+    /// entity's CLR type, or leave the association empty for anything else (RPT-014).
     /// </summary>
-    private static string ExtractDataTypeName(XtraReport report)
+    private string ExtractDataTypeName(XtraReport report)
     {
-        // Check for SqlDataSource — the AI wizard typically creates these.
-        if (report.DataSource is DevExpress.DataAccess.Sql.SqlDataSource sqlDs)
-        {
-            var firstQuery = sqlDs.Queries.OfType<DevExpress.DataAccess.Sql.SelectQuery>().FirstOrDefault();
-            if (firstQuery != null)
-                return firstQuery.Name;
-
-            // Fall back to any query name.
-            var anyQuery = sqlDs.Queries.Cast<DevExpress.DataAccess.Sql.SqlQuery>().FirstOrDefault();
-            if (anyQuery != null)
-                return anyQuery.Name;
-        }
-
-        // Check DataMember as fallback.
-        if (!string.IsNullOrWhiteSpace(report.DataMember))
-            return report.DataMember;
-
-        return "";
+        var root = (report.DataMember ?? "").Split('.')[0];
+        var entity = _schemaService.Schema.Entities.FirstOrDefault(e => e.TableName == root);
+        return entity?.ClrType.FullName ?? "";
     }
 
     /// <summary>
@@ -460,39 +451,4 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
         public SqlDataConnection? LoadConnection(string connectionName)
             => connectionName == _connection.Name ? _connection : null;
     }
-
-    private DbContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<ReportDbContext>()
-            .UseNpgsql(_connectionString)
-            .Options;
-        return new ReportDbContext(options);
-    }
-
-    /// <summary>
-    /// Lightweight DbContext that only maps <see cref="DevExpress.Persistent.BaseImpl.EF.ReportDataV2"/>
-    /// to avoid XAF's change-tracking requirements on entities like FileData.
-    /// </summary>
-    private sealed class ReportDbContext : DbContext
-    {
-        public ReportDbContext(DbContextOptions<ReportDbContext> options) : base(options) { }
-
-        public DbSet<DevExpress.Persistent.BaseImpl.EF.ReportDataV2> ReportDataV2 => Set<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>();
-
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            base.OnModelCreating(modelBuilder);
-
-            // Map only ReportDataV2 and its base type (BaseObject provides ID).
-            modelBuilder.Entity<DevExpress.Persistent.BaseImpl.EF.ReportDataV2>(entity =>
-            {
-                entity.ToTable("ReportDataV2");
-                entity.HasKey(e => e.ID);
-            });
-
-            // Ignore all other XAF base types that EF might try to discover.
-            modelBuilder.Ignore<DevExpress.Persistent.BaseImpl.EF.BaseObject>();
-        }
-    }
-
 }
