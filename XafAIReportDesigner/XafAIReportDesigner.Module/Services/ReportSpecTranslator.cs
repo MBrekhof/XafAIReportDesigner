@@ -300,19 +300,26 @@ Expression rules (DevExpress criteria language):
                     var segments = m.Value.Replace("[", "").Replace("]", "").Split('.').Select(s => s.Trim()).ToArray();
                     if (Resolves(contextEntity, segments)) return m.Value;
 
+                    // Over-qualified chain whose remainder still names a relation: drop the
+                    // redundant leading segments ([OrdersOrderItems].[OrderItemsProducts].[UnitPrice]
+                    // from OrderItems → [OrderItemsProducts].[UnitPrice]). The remainder carries
+                    // its own relation, so the intent survives.
+                    for (int k = 1; k < segments.Length - 1; k++)
+                        if (Resolves(contextEntity, segments[k..]))
+                            return string.Join(".", segments[k..].Select(s => $"[{s}]"));
+
                     // Wrong-direction relation segment (e.g. [ProductsOrderItems] used from
                     // OrderItems): swap for the relation from the current entity to the
-                    // misused name's master entity, then re-check. This runs BEFORE the
-                    // prefix-dropping repair: [ProductsOrderItems].[UnitPrice] means the
-                    // product's price, and dropping the segment would silently bind the
-                    // order line's UnitPrice instead (RPT-012).
+                    // misused name's master entity, then re-check. This runs BEFORE dropping
+                    // down to a bare column: [ProductsOrderItems].[UnitPrice] means the
+                    // product's price, and a bare [UnitPrice] would silently bind the order
+                    // line's price instead (RPT-012).
                     if (RepairSegments(contextEntity, segments) is string[] fixedSegments)
                         return string.Join(".", fixedSegments.Select(s => $"[{s}]"));
 
-                    // Over-qualified chain: drop redundant leading segments if the rest resolves.
-                    for (int k = 1; k < segments.Length; k++)
-                        if (Resolves(contextEntity, segments[k..]))
-                            return string.Join(".", segments[k..].Select(s => $"[{s}]"));
+                    // Last resort before the graph search: the bare column resolves locally.
+                    if (Resolves(contextEntity, segments[^1..]))
+                        return $"[{segments[^1]}]";
 
                     // BFS for the shortest relation path whose end entity resolves the chain.
                     var queue = new Queue<(string Entity, List<string> Path)>();

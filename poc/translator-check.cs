@@ -21,7 +21,8 @@ var spec = new ReportSpec("Check", "Invoices", PagePerMasterRow: true,
     Levels: [new LevelSpec("InvoicesOrders", [new FieldSpec("[OrdersCustomers].[CompanyName]", "Customer", null)], []),
              new LevelSpec("OrdersOrderItems", [],
                  [new ColumnSpec("[ProductsOrderItems].[UnitPrice]", "List price", "n2", true),
-                  new ColumnSpec("[OrdersOrderItems].[Quantity]", "Qty", null, true)])],
+                  new ColumnSpec("[OrdersOrderItems].[Quantity]", "Qty", null, true),
+                  new ColumnSpec("[OrdersOrderItems].[OrderItemsProducts].[UnitPrice]", "List price 2", null, true)])],
     Totals: [new TotalSpec("Total", "Sum([Quantity] * [UnitPrice])", "c2")]);
 
 var report = ReportSpecTranslator.BuildReport(spec, schema, "X", conn);
@@ -31,6 +32,10 @@ Assert(expressions.Contains("'Customer''s ref: ' + [InvoiceNumber]"), "apostroph
 Assert(expressions.Contains("FormatString('{0:n2}', [OrderItemsProducts].[UnitPrice])"),
     "wrong-direction chain repaired to the PRODUCT price, not stripped to the line price", expressions);
 Assert(expressions.Contains("[Quantity]"), "over-qualified chain still stripped", expressions);
+Assert(expressions.Contains("[OrderItemsProducts].[UnitPrice]"),
+    "over-qualified chain keeps its explicit relation (not rewritten into a parent round trip)", expressions);
+Assert(!expressions.Any(e => e.Contains("[OrderItemsOrders].[OrdersOrderItems]")),
+    "no hop-by-hop rewrite into a collection lookup", expressions);
 Assert(expressions.Contains("'Customer: ' + [InvoicesOrders].[OrdersCustomers].[CompanyName]"),
     "intermediate headerFields prefixed into the root band", expressions);
 Assert(SchemaSqlDataSourceFactory.ValidateBindings(report, schema).Count == 0, "no binding issues", expressions);

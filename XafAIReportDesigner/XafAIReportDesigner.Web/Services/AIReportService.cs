@@ -32,7 +32,7 @@ public sealed class AIReportService(
 
         var schemaText = SchemaText();
         return await RunAsync(ReportSpecTranslator.BuildSystemPrompt(schemaText), prompt, prompt,
-            model, reportName, store, setStatus);
+            model, reportName, store, createNew: true, setStatus);
     }
 
     public async Task<AIReportResult> ModifyAsync(string reportName, string change, string model,
@@ -52,11 +52,11 @@ public sealed class AIReportService(
         current.Extensions.TryGetValue(ReportSpecTranslator.PromptExtensionKey, out var originalPrompt);
         var schemaText = SchemaText();
         return await RunAsync(ReportSpecTranslator.BuildModifySystemPrompt(schemaText, currentSpec), change,
-            (originalPrompt ?? "") + "\n[modified]: " + change, model, reportName, store, setStatus);
+            (originalPrompt ?? "") + "\n[modified]: " + change, model, reportName, store, createNew: false, setStatus);
     }
 
     private async Task<AIReportResult> RunAsync(string systemPrompt, string userPrompt, string promptToEmbed,
-        string model, string reportName, ReportDataV2Store store, Action<string>? setStatus)
+        string model, string reportName, ReportDataV2Store store, bool createNew, Action<string>? setStatus)
     {
         var api = new TornadoApi(new List<ProviderAuthentication>
         {
@@ -75,7 +75,10 @@ public sealed class AIReportService(
         result.Report.DisplayName = reportName;
         using var stream = new MemoryStream();
         result.Report.SaveLayoutToXml(stream);
-        store.Save(reportName, stream.ToArray());
+        // Generate inserts (unique index turns a lost race into an error, never an overwrite);
+        // Modify updates in place.
+        if (createNew) store.Insert(reportName, stream.ToArray());
+        else store.Save(reportName, stream.ToArray());
 
         var issues = result.Issues ?? [];
         return new AIReportResult(true,

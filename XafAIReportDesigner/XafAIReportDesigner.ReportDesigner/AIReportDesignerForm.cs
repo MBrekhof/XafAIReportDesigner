@@ -290,6 +290,9 @@ public sealed class AIReportDesignerForm : XRDesignRibbonForm
                     var report = new XtraReport();
                     using var stream = new MemoryStream(selectedReport.Content);
                     report.LoadLayoutFromXml(stream);
+                    // The row's name wins over whatever the layout carries (layouts saved
+                    // before RPT-011 may still hold the name they were originally saved as).
+                    report.DisplayName = selectedReport.DisplayName;
                     RestoreAppConnection(report);
                     OpenReport(report);
                 }

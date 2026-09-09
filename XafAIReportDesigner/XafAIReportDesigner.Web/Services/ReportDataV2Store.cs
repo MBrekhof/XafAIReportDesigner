@@ -40,8 +40,19 @@ public sealed class ReportDataV2Store(string connectionString)
         return cmd.ExecuteScalar() as byte[];
     }
 
+    /// <summary>Create-only: the unique index on DisplayName makes a lost race a loud error, never an overwrite.</summary>
+    public void Insert(string name, byte[] layout)
+    {
+        if (!IsValidName(name)) throw new ArgumentException($"Invalid report name '{name}'.", nameof(name));
+        using var conn = new NpgsqlConnection(connectionString);
+        conn.Open();
+        Insert(conn, name, layout);
+    }
+
+    /// <summary>Upsert for Modify and the designer's own Save.</summary>
     public void Save(string name, byte[] layout)
     {
+        if (!IsValidName(name)) throw new ArgumentException($"Invalid report name '{name}'.", nameof(name));
         using var conn = new NpgsqlConnection(connectionString);
         conn.Open();
         using var update = new NpgsqlCommand(
@@ -49,7 +60,11 @@ public sealed class ReportDataV2Store(string connectionString)
         update.Parameters.AddWithValue("name", name);
         update.Parameters.AddWithValue("content", layout);
         if (update.ExecuteNonQuery() > 0) return;
+        Insert(conn, name, layout);
+    }
 
+    private static void Insert(NpgsqlConnection conn, string name, byte[] layout)
+    {
         using var insert = new NpgsqlCommand(
             "INSERT INTO \"ReportDataV2\" (\"DisplayName\", \"Content\", \"DataTypeName\", \"IsInplaceReport\", \"IsPredefined\") " +
             "VALUES (@name, @content, '', false, false)", conn);
