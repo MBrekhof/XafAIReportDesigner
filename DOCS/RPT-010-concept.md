@@ -1,6 +1,6 @@
 # RPT-010 concept — Web UI refinement (home page + designer chrome)
 
-Status: CONCEPT v3, 2026-09-09. Not implemented. Card: RPT-010 (ID 1063), deferred by the
+Status: CONCEPT v4, 2026-09-09. Not implemented. Card: RPT-010 (ID 1063), deferred by the
 user on 2026-07-19 ("works, ui needs some refinement, not now"). v1 was reviewed by Codex the
 same day; v2 folds in that review (see "Review history" at the end). This is the design to
 approve before any code is written.
@@ -219,10 +219,14 @@ Service changes:
   now surfaces as the designer's save error instead of an overwrite.
 - `AIReportService.ModifyAsync` **rechecks before saving** (closes the race Codex found in
   v2: Modify running on A while A is opened, edited and saved in the designer or WinForms).
-  The overwrite-vs-copy decision is made before the LLM roll; after the roll, `Load(name)`
-  again and compare the bytes with what was loaded at the start. If they differ, the stored
-  layout moved under us: save the result as the `<name> (AI)` copy regardless of the
-  earlier decision and say so in the result panel. Two `Load` calls, one byte comparison.
+  The overwrite-vs-copy decision is made before the LLM roll; the write afterwards is
+  **conditional and atomic**: `ReportDataV2Store.SaveIfUnchanged(name, layout, expectedBytes)`
+  runs `UPDATE … SET Content=@layout WHERE DisplayName=@n AND Content=@expected AND NOT
+  IsPredefined` with the bytes loaded at the start. Zero rows updated means the stored layout
+  moved under us (designer, WinForms, second tab): insert the result as the `<name> (AI)` copy
+  and say so in the result panel. No separate re-read, no window between check and write
+  (Codex's v3 objection). Predefined rows can never match because the guard is in the
+  statement.
 - `AIReportService`: the selected model is already passed per call; nothing changes.
 - No pipeline change.
 
@@ -252,7 +256,8 @@ Service changes:
   its own refresh.
 - Race: start Modify on A, open A in a second tab, save a change there before the roll
   finishes → the Modify result lands as "A (AI)", A keeps the designer's save, the result
-  panel says why.
+  panel says why. Self-check line: `SaveIfUnchanged` with stale expected bytes returns
+  false and leaves the row untouched.
 - Designer Save As onto an existing name is refused (DX error dialog), the existing report
   unchanged.
 - `/designer` without a report ends on `/`; `/designer?report=nope` shows the error + back link.
@@ -295,3 +300,7 @@ in the same band with the risk removed.
   remaining data-loss race (Modify in flight vs. a designer save of the same report).
 - v3: `Busy` also locks Open; `ModifyAsync` re-reads the stored layout before saving and
   diverts to the "(AI)" copy if it changed; wording fixed; race added to acceptance.
+- v3 → Codex: the re-read and the write are still two operations — a save can land between
+  them. Proposed a conditional `UPDATE … WHERE Content=@original`.
+- v4: adopted verbatim as `SaveIfUnchanged`. Ready to implement once the owner answers the
+  three open questions.
