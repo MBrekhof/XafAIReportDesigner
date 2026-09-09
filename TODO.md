@@ -36,4 +36,8 @@ deferred by the user ("works, ui needs some refinement, not now").
 Codex review 2026-09-09 (Web#5): after a Generate with unresolved bindings the page navigates
 to the designer immediately, so the warning list is never seen — keep the result on screen
 with an explicit "Open designer" button when `Issues` is non-empty.
+**Concept written and Codex-reviewed (3 rounds): `DOCS/RPT-010-concept.md` (v3, 2026-09-09).**
+Plain HTML/CSS, home = report gallery + AI panel, Modify from home only, no cancel, no
+thumbnails; ~8.5 h. Three open questions for the owner at the end of the document — answer
+those, then implement.
 
