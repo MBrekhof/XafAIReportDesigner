@@ -23,32 +23,53 @@ namespace XafAIReportDesigner.Module.Services
             ReportSpec? bestSpec = null;
             IReadOnlyList<string>? bestIssues = null;
             var parseFailed = false;
+            Exception? lastError = null;
             for (int attempt = 1; attempt <= 3; attempt++)
             {
-                setStatus?.Invoke($"Attempt {attempt}: requesting report spec…");
-                var response = await chatClient.GetResponseAsync(new List<ChatMessage>
+                // One bad roll (provider hiccup, translator throwing on an odd spec) must not
+                // discard a good roll already in hand — it counts as a failed attempt (RPT-013).
+                try
                 {
-                    new(ChatRole.System, systemPrompt),
-                    new(ChatRole.User, userPrompt + (parseFailed
-                        ? "\n\nYour previous response was not valid JSON for the required shape. Output ONLY the JSON object."
-                        : "")),
-                });
-                var spec = ReportSpecTranslator.ParseSpec(response.Text);
-                if (spec == null) { parseFailed = true; continue; }
+                    setStatus?.Invoke($"Attempt {attempt}: requesting report spec…");
+                    var response = await chatClient.GetResponseAsync(new List<ChatMessage>
+                    {
+                        new(ChatRole.System, systemPrompt),
+                        new(ChatRole.User, userPrompt + (parseFailed
+                            ? "\n\nYour previous response was not valid JSON for the required shape. Output ONLY the JSON object."
+                            : "")),
+                    });
+                    var spec = ReportSpecTranslator.ParseSpec(response.Text);
+                    if (spec == null) { parseFailed = true; continue; }
 
-                setStatus?.Invoke($"Attempt {attempt}: translating spec…");
-                var report = ReportSpecTranslator.BuildReport(spec, schema, connectionName, connectionParameters);
-                var issues = SchemaSqlDataSourceFactory.ValidateBindings(report, schema);
-                if (bestIssues == null || issues.Count < bestIssues.Count)
-                {
-                    best = report;
-                    bestSpec = spec;
-                    bestIssues = issues;
+                    setStatus?.Invoke($"Attempt {attempt}: translating spec…");
+                    var report = ReportSpecTranslator.BuildReport(spec, schema, connectionName, connectionParameters);
+                    var issues = SchemaSqlDataSourceFactory.ValidateBindings(report, schema);
+                    if (bestIssues == null || issues.Count < bestIssues.Count)
+                    {
+                        best?.Dispose();
+                        best = report;
+                        bestSpec = spec;
+                        bestIssues = issues;
+                    }
+                    else
+                    {
+                        report.Dispose();
+                    }
+                    if (bestIssues.Count == 0) break;
                 }
-                if (bestIssues.Count == 0) break;
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    setStatus?.Invoke($"Attempt {attempt} failed: {ex.Message}");
+                }
             }
 
-            if (best == null || bestSpec == null) return new SpecPipelineResult(null, null, bestIssues);
+            if (best == null || bestSpec == null)
+            {
+                if (lastError != null) throw new InvalidOperationException(
+                    $"All attempts failed; last error: {lastError.Message}", lastError);
+                return new SpecPipelineResult(null, null, bestIssues);
+            }
 
             var specJson = System.Text.Json.JsonSerializer.Serialize(bestSpec);
             ReportSpecTranslator.AttachSpec(best, specJson, promptToEmbed);

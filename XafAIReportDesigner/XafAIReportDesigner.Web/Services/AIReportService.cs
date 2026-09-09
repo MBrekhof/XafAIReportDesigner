@@ -42,7 +42,7 @@ public sealed class AIReportService(
         if (layout == null)
             return new AIReportResult(false, $"Report '{reportName}' not found.", []);
 
-        var current = new XtraReport();
+        using var current = new XtraReport();
         using (var stream = new MemoryStream(layout)) current.LoadLayoutFromXml(stream);
         var currentSpec = ReportSpecTranslator.TryGetSpec(current);
         if (currentSpec == null)
@@ -72,9 +72,10 @@ public sealed class AIReportService(
         if (result.Report == null)
             return new AIReportResult(false, $"{model} did not return a valid report spec after 3 attempts.", result.Issues ?? []);
 
-        result.Report.DisplayName = reportName;
+        using var report = result.Report; // only the serialized layout outlives this call
+        report.DisplayName = reportName;
         using var stream = new MemoryStream();
-        result.Report.SaveLayoutToXml(stream);
+        report.SaveLayoutToXml(stream);
         // Generate inserts (unique index turns a lost race into an error, never an overwrite);
         // Modify updates in place.
         if (createNew) store.Insert(reportName, stream.ToArray());

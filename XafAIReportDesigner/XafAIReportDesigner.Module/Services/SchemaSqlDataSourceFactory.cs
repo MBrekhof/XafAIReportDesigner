@@ -170,6 +170,14 @@ namespace XafAIReportDesigner.Module.Services
                     issues.Add($"Control '{controlName}' (band '{bandName}'): expression contains an empty operand [] — bind it to a real field.");
                     return;
                 }
+                // Syntax gate: the report evaluates expressions with the criteria-language parser,
+                // so a chain walk alone would pass "[Quantity] +" with zero issues (RPT-013).
+                try { DevExpress.Data.Filtering.CriteriaOperator.Parse(expression); }
+                catch (DevExpress.Data.Filtering.Exceptions.CriteriaParserException ex)
+                {
+                    issues.Add($"Control '{controlName}' (band '{bandName}'): expression does not parse — {ex.Message}");
+                    return;
+                }
 
                 foreach (var chain in ExtractFieldChains(expression))
                 {
@@ -195,7 +203,13 @@ namespace XafAIReportDesigner.Module.Services
         private static string ResolveContext(string dataMember, Dictionary<(string, string), string> relations,
             Dictionary<string, HashSet<string>> columns, List<string> issues, string owner)
         {
-            if (string.IsNullOrEmpty(dataMember)) return null;
+            if (string.IsNullOrEmpty(dataMember))
+            {
+                // The root report needs a master view; a DetailReportBand without a member
+                // simply inherits its parent's context.
+                if (owner == "report") issues.Add("report: DataMember is empty — the report iterates nothing.");
+                return null;
+            }
             var segments = dataMember.Split('.');
             if (!columns.ContainsKey(segments[0]))
             {

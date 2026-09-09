@@ -77,21 +77,42 @@ Expression rules (DevExpress criteria language):
         public static string? TryGetSpec(XtraReport report) =>
             report.Extensions.TryGetValue(SpecExtensionKey, out var json) && !string.IsNullOrWhiteSpace(json) ? json : null;
 
-        /// <summary>Parses the LLM response into a spec; returns null if it is not valid JSON.</summary>
+        /// <summary>
+        /// Parses the LLM response into a spec; returns null if it is not valid JSON of the
+        /// required shape. A positional record deserializes "{}" without complaint (every
+        /// member null), so the shape is checked here rather than letting BuildReport NRE.
+        /// Missing collections become empty; a missing masterView is a parse failure.
+        /// </summary>
         public static ReportSpec? ParseSpec(string rawResponse)
         {
             var text = rawResponse.Trim();
             if (text.StartsWith("```"))
                 text = text.Trim('`').Replace("json\n", "").Trim();
+            ReportSpec? spec;
             try
             {
-                return JsonSerializer.Deserialize<ReportSpec>(text,
+                spec = JsonSerializer.Deserialize<ReportSpec>(text,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
             catch (JsonException)
             {
                 return null;
             }
+            if (spec == null || string.IsNullOrWhiteSpace(spec.MasterView)) return null;
+            return spec with
+            {
+                Title = spec.Title ?? "",
+                MasterFields = (spec.MasterFields ?? []).Where(f => f?.Expression != null).ToList(),
+                Levels = (spec.Levels ?? []).Where(l => l?.Relation != null)
+                    .Select(l => l with
+                    {
+                        HeaderFields = (l.HeaderFields ?? []).Where(f => f?.Expression != null).ToList(),
+                        Columns = (l.Columns ?? []).Where(c => c?.Expression != null)
+                            .Select(c => c with { Header = c.Header ?? "" }).ToList(),
+                    }).ToList(),
+                Totals = (spec.Totals ?? []).Where(t => t?.Expression != null)
+                    .Select(t => t with { Label = t.Label ?? "" }).ToList(),
+            };
         }
 
         public static XtraReport BuildReport(ReportSpec spec, SchemaInfo schema,

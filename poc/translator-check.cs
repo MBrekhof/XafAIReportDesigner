@@ -53,6 +53,20 @@ var fmt = new ReportSpec("Fmt", "Customers", false, [new FieldSpec("[CompanyName
 var fmtExpr = AllExpressions(ReportSpecTranslator.BuildReport(fmt, schema, "X", conn)).Single();
 Assert(fmtExpr == "FormatString('{0}''s', [CompanyName])", "apostrophe in format is doubled", [fmtExpr]);
 
+// 4. RPT-013: ParseSpec shape guard and the validator's syntax gate.
+Assert(ReportSpecTranslator.ParseSpec("{}") == null, "ParseSpec rejects {} (no masterView)", []);
+Assert(ReportSpecTranslator.ParseSpec("not json") == null, "ParseSpec rejects non-JSON", []);
+var partial = ReportSpecTranslator.ParseSpec("""{"masterView":"Customers"}""");
+Assert(partial is { MasterFields.Count: 0, Levels.Count: 0, Totals.Count: 0 }, "ParseSpec fills missing collections", []);
+var partialReport = ReportSpecTranslator.BuildReport(partial!, schema, "X", conn);
+Assert(SchemaSqlDataSourceFactory.ValidateBindings(partialReport, schema).Count == 0, "partial spec still builds", []);
+var broken = new ReportSpec("Broken", "Customers", false, [new FieldSpec("[CompanyName] +", null, null)], [], []);
+var brokenIssues = SchemaSqlDataSourceFactory.ValidateBindings(ReportSpecTranslator.BuildReport(broken, schema, "X", conn), schema);
+Assert(brokenIssues.Any(i => i.Contains("does not parse")), "malformed expression is reported", brokenIssues);
+var noMember = new XtraReport();
+Assert(SchemaSqlDataSourceFactory.ValidateBindings(noMember, schema).Any(i => i.Contains("DataMember is empty")),
+    "empty root DataMember is reported", []);
+
 Console.WriteLine("translator-check: all assertions passed");
 return 0;
 
